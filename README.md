@@ -40,6 +40,8 @@ honestly labelled.
 
 ### The colour is held during sampling, not patched afterwards
 
+![Latent colour guidance](docs/demos/03-latent-guidance.png)
+
 `Apply Latent Color Guidance` patches the `MODEL`. At every step the model
 predicts what it thinks the finished image looks like; the patch nudges that
 prediction towards your reference's palette and hands it back. The model then
@@ -52,10 +54,14 @@ Because it patches the model instead of replacing the sampler, **every sampler
 works**: KSampler, KSamplerAdvanced, SamplerCustom, detailers, anything
 downstream.
 
-| SD 1.5, img2img at denoise 0.75 | Distance from reference | Detail energy |
+| SDXL, img2img at denoise 0.72 | Distance from reference | Detail energy |
 |---|---|---|
-| no guidance | 6.09 | 6.81 |
-| guidance, strength 0.6 | **4.76** (−21.8%) | 7.60 (+11.6%) |
+| no guidance | 5.59 | 6.46 |
+| guidance, strength 0.4 | 3.93 (−29.7%) | 6.44 |
+| guidance, strength 0.7 | **2.99** (−46.5%) | 6.52 (+0.9%) |
+
+Detail energy barely moves, which is the point of correcting in the colour
+subspace rather than across every channel.
 
 Measured on the latent directly, without the VAE round trip in the way, the
 correction removes **100%** of a deliberate cast (projected colour error
@@ -89,6 +95,8 @@ and the 128↔32 channel repacking Flux.2 needs round-trips bit-for-bit.
 
 ### Three transfer methods, for three different problems
 
+![Methods](docs/demos/04-methods.png)
+
 - **`mean_only`** shifts each channel's average. It cannot change contrast or
   detail, so it is the safe default on many-channel latents.
 - **`reinhard`** matches average *and* spread — the classic transfer. Use it
@@ -96,6 +104,20 @@ and the 128↔32 channel repacking Flux.2 needs round-trips bit-for-bit.
 - **`mkl`** is optimal linear transport (Monge–Kantorovich). It accounts for
   correlations *between* channels, so a cast lying diagonally across them is
   removed rather than approximated axis by axis.
+
+On SDXL at strength 0.6 the three land close together on the average (3.23 /
+3.28 / 3.20) and separate on the spread, where MKL is clearly ahead: 0.91
+against 1.12 for `mean_only` and 1.55 for `reinhard`.
+
+![Working space](docs/demos/05-working-space.png)
+
+One honest note on `space`. On a four-channel SD or SDXL latent the channels
+really do behave like colour axes, so matching them raw is competitive — it
+reaches 2.75 against the projection's 3.28. It also pushes detail energy to
+7.76 against 6.50, because a per-channel gain above one amplifies fine detail
+along with the colour. The projection is the conservative choice there, and
+the necessary one on the many-channel families, where raw matching would be
+rescaling structure and texture rather than colour.
 
 ### The thing people remember as "built into sampling"
 

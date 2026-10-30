@@ -1,0 +1,28 @@
+{
+  "SDXL": {
+    "space": "<LatentColorSpace rgb_proj C=4 ndim=4>",
+    "blend_a1111": 2.635279417037964,
+    "blend_lab_luminosity": 3.4081878662109375,
+    "blend_drifted": 5.585215091705322,
+    "image_strength_0": 5.585215091705322,
+    "image_strength_0.35": 4.554036617279053,
+    "image_strength_0.7": 3.532440185546875,
+    "image_strength_1": 2.635279417037964,
+    "guidance_off": 5.585215091705322,
+    "guidance_off_detail": 6.4545369148254395,
+    "guidance_0.4": 3.9273784160614014,
+    "guidance_0.4_detail": 6.4389753341674805,
+    "guidance_0.7": 2.986175537109375,
+    "guidance_0.7_detail": 6.51461124420166,
+    "method_mean_only": 3.233062744140625,
+    "method_mean_only_spread": 1.1241631507873535,
+    "method_reinhard": 3.2765910625457764,
+    "method_reinhard_spread": 1.5494695901870728,
+    "method_mkl": 3.1987507343292236,
+    "method_mkl_spread": 0.9124367833137512,
+    "space_raw": 2.745386838912964,
+    "space_raw_detail": 7.762545108795166,
+    "space_rgb_proj": 3.2765910625457764,
+    "space_rgb_proj_detail": 6.501306056976318
+  }
+}

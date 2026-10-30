@@ -322,6 +322,9 @@ def main():
     ap.add_argument("--sd15")
     ap.add_argument("--image", required=True)
     ap.add_argument("--out", default="docs/demos")
+    ap.add_argument("--lean", action="store_true",
+                    help="turn off pinned memory and async offload; gentler on a "
+                         "machine that is being used for something else")
     args = ap.parse_args()
 
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -329,6 +332,15 @@ def main():
 
     sys.path.insert(0, args.comfy)
     os.chdir(args.comfy)
+
+    if args.lean:
+        # Imported as a library, ComfyUI never parses a command line, so its
+        # flags have to be set on the parsed-args object — and before
+        # model_management is imported, which reads them at import time.
+        import comfy.cli_args
+        comfy.cli_args.args.disable_pinned_memory = True
+        comfy.cli_args.args.disable_async_offload = True
+        print("  lean mode: pinned memory and async offload off")
 
     spec = importlib.util.spec_from_file_location(
         "A1111CCPack", os.path.join(here, "__init__.py"), submodule_search_locations=[here])
