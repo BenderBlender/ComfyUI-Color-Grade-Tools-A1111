@@ -190,7 +190,10 @@ img2img came out 3.4 times the grade). Measured on SDXL with dpmpp_2m against
 the same wheels applied afterwards: a dusk street (txt2img) within 3° at 0.90
 of the size at strength 1.0, and 0.78 / 0.76 of the share at 0.5 / 0.25; a
 bright img2img at denoise 0.7 within 3° at 1.1 / 0.67 of the size at 1.0 / 0.5.
-Other families use the preview matrix until they are measured.
+SD3 / SD3.5 has measured axes too (a txt2img street: 10.9° and 0.90 of the
+size, where the preview matrix gave 24.5° and 0.82). SD1.5 was checked with
+the preview matrix and needs none (2.1°, 0.93). Other families use the
+preview matrix until they are measured.
 
 All of them take an optional `MASK`, which restricts *where the colours are
 measured* — the usual want for inpainting, where the surrounding plate would

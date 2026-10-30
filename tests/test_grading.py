@@ -814,6 +814,25 @@ def test_presets_differ_from_each_other():
     assert not duplicates, duplicates
 
 
+def test_every_measured_entry_is_well_formed():
+    """An entry in axes.MEASURED is used to write colour into a latent, so it
+    must invert well: the preview matrix that turned SDXL magenta had condition
+    number 11; the measured SDXL and SD3 axes have 3.8 and under 3. A malformed
+    or badly conditioned entry pasted in from a calibration run fails here,
+    not as a wrong colour in someone's render."""
+    from a1111_cc import axes
+    for name, entry in axes.MEASURED.items():
+        p = torch.tensor(entry["factors"], dtype=torch.float64)
+        assert p.ndim == 2 and p.shape[1] == 3 and p.shape[0] in (4, 16), (name, tuple(p.shape))
+        assert len(entry["bias"]) == 3, name
+        v, r = entry["tone"]["v"], entry["tone"]["r"]
+        assert len(v) == len(r) and all(a < b for a, b in zip(v, v[1:])), name
+        assert all(0.2 < x < 3.0 for x in r), (name, r)
+        cond = float(torch.linalg.cond(p))
+        assert cond < 6.0, f"{name}: condition number {cond:.1f}"
+        print(f"  {name}: {p.shape[0]} channels, condition {cond:.1f}")
+
+
 def test_a_saved_name_keeps_single_spaces():
     """Characters outside the safe set are cut, and the spaces around them used
     to stay: «Тест — тёплые света» was saved as «Тест  тёплые света», two
