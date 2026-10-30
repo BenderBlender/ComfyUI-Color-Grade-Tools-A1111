@@ -18,6 +18,9 @@ import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import comfy_memory  # noqa: E402
+
 CELL = 360
 
 
@@ -25,42 +28,8 @@ CELL = 360
 # plumbing
 # --------------------------------------------------------------------------- #
 
-def memory(tag=""):
-    import torch
-    bits = []
-    if torch.cuda.is_available():
-        free, total = torch.cuda.mem_get_info()
-        bits.append(f"VRAM {(total - free) / 2**30:.1f}/{total / 2**30:.1f} GB")
-    try:
-        import psutil
-        vm = psutil.virtual_memory()
-        bits.append(f"RAM {(vm.total - vm.available) / 2**30:.0f}/{vm.total / 2**30:.0f} GB")
-    except ImportError:
-        pass
-    print(f"    [memory{' ' + tag if tag else ''}] " + "  ".join(bits), flush=True)
-
-
-def free_everything(tag=""):
-    import gc
-
-    import torch
-
-    import comfy.model_management as mm
-
-    mm.unload_all_models()
-    for name, kwargs in (("free_pins", {"evict_active": True, "loaded": True}),
-                         ("cleanup_models_gc", {}), ("cleanup_models", {})):
-        fn = getattr(mm, name, None)
-        if fn is None:
-            continue
-        try:
-            fn(1 << 62, **kwargs) if name == "free_pins" else fn(**kwargs)
-        except Exception as exc:  # noqa: BLE001
-            print(f"    [memory] {name}: {exc!r}")
-    gc.collect()
-    mm.soft_empty_cache(force=True)
-    torch.cuda.empty_cache()
-    memory(f"after unload {tag}".strip())
+memory = comfy_memory.report
+free_everything = comfy_memory.free_everything
 
 
 def load_pack(root):
@@ -361,6 +330,10 @@ def main():
     parser.add_argument("--size", type=int, default=768)
     parser.add_argument("--with-model")
     parser.add_argument("--lean", action="store_true")
+    parser.add_argument("--headroom", type=float,
+                        default=comfy_memory.DEFAULT_HEADROOM_GB,
+                        help="gigabytes of RAM to leave free (ComfyUI keeps "
+                             "only 2 unless told otherwise)")
     args = parser.parse_args()
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -369,11 +342,8 @@ def main():
     sys.path.insert(0, args.comfy)
     os.chdir(args.comfy)
 
-    if args.lean:
-        import comfy.cli_args
-        comfy.cli_args.args.disable_pinned_memory = True
-        comfy.cli_args.args.disable_async_offload = True
-        print("  lean mode: pinned memory and async offload off")
+    comfy_memory.before_comfy_imports(pinned=not args.lean, async_offload=not args.lean)
+    comfy_memory.configure(args.headroom)
 
     pack = load_pack(root)
     image = load_image(args.image, args.size)
