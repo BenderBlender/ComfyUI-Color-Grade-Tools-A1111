@@ -97,21 +97,15 @@ class A1111ColorCorrection:
     CATEGORY = "ColorKit/image"
     DESCRIPTION = (
         "What the Automatic1111 webui does when you tick 'colour correction' on an "
-        "img2img pass, reproduced exactly.
-
-"
+        "img2img pass, reproduced exactly.\n\n"
         "WHAT IT IS FOR. Any img2img or refine pass drifts in colour, and the higher "
         "the denoise the further it goes. Give this the result and the picture you "
-        "started from, and it puts the palette back.
-
-"
+        "started from, and it puts the palette back.\n\n"
         "HOW IT WORKS. The result's histogram is matched to the reference in LAB, then "
         "blended so the generated image keeps its own brightness and takes only the "
         "reference's colour. That last part is the whole operation: the default "
         "blend_mode 'a1111' is the webui's behaviour, while 'lab_luminosity' is the "
-        "opposite trade and keeps the drift.
-
-"
+        "opposite trade and keeps the drift.\n\n"
         "WHERE IT GOES. After VAEDecode. Wire the img2img input picture into "
         "'reference'. Exact and cheap — nothing is sampled."
     )

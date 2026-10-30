@@ -1,56 +1,91 @@
 """Render the figures that show what each node does.
 
-Split in two on purpose. Everything up to --with-model needs no checkpoint and
-no GPU: the wheels, the presets, the scopes, the comparison and reference
-matching are all arithmetic on pixels, and they are what most of the pack is.
-The sampling demonstrations load one model, use it, and give the memory back.
+Split in two on purpose. The wheels, the presets, the scopes, the comparison
+and reference matching are arithmetic on pixels: they run here, on the CPU,
+and need nothing but this pack. The LUT figure and the sampling
+demonstrations are done by the ComfyUI you already have open — start it the
+usual way, with this pack in its custom_nodes, and the script talks to it:
 
-    python tools/make_showcase.py --comfy PATH --image PICTURE.png
-    python tools/make_showcase.py --comfy PATH --image PICTURE.png \\
-        --with-model CHECKPOINT.safetensors --lean
+    python tools/make_showcase.py --image PICTURE.png
+    python tools/make_showcase.py --image PICTURE.png --reference LOOK.png \\
+        --with-model CHECKPOINT.safetensors
+
+The checkpoint is named the way the server's Load Checkpoint node lists it;
+a bare file name or a full path is matched against that list. One
+generation is queued at a time, waited for, and read back; the server's
+queue, memory manager and Interrupt button all apply, and nothing in this
+process touches the GPU. Every graph is checked against the server's
+/object_info before the first one is queued.
+
+    --dry-run     build and validate every graph, print them, queue nothing
+    --gap 2.0     seconds to leave the GPU alone between generations
+    --unload      ask the server to unload the model when done
+    --server      where ComfyUI listens (default 127.0.0.1:8188)
+    --size 768    side of the square the pictures are made at
 """
 
 import argparse
 import importlib.util
+import logging
 import os
+import shutil
 import sys
+import tempfile
 import time
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import comfy_memory  # noqa: E402
+import comfy_api  # noqa: E402
 
 CELL = 360
+
+POSITIVE = "a harbour at dawn, boats, wet stone, photograph"
+NEGATIVE = "blurry, low quality"
 
 
 # --------------------------------------------------------------------------- #
 # plumbing
 # --------------------------------------------------------------------------- #
 
-memory = comfy_memory.report
-free_everything = comfy_memory.free_everything
-
-
 def load_pack(root):
-    spec = importlib.util.spec_from_file_location(
-        "ColorKitPack", os.path.join(root, "__init__.py"),
-        submodule_search_locations=[root])
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["ColorKitPack"] = module
-    spec.loader.exec_module(module)
+    """The pack, in this process, for the pixel arithmetic. The modules that
+    need ComfyUI itself (the sampler-side nodes) do not load here and are
+    not needed here; their import errors are expected and kept quiet."""
+    logger = logging.getLogger("ColorKitPack")
+    level = logger.level
+    logger.setLevel(logging.CRITICAL)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "ColorKitPack", os.path.join(root, "__init__.py"),
+            submodule_search_locations=[root])
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["ColorKitPack"] = module
+        spec.loader.exec_module(module)
+    finally:
+        logger.setLevel(level)
     return module
 
 
-def load_image(path, size):
-    import torch
+def load_image_u8(path, size):
+    """Centre-crop to a square and resize — the same pixels the server will
+    read back from the upload, so the two sides agree exactly."""
     from PIL import Image
     Image.MAX_IMAGE_PIXELS = None
     img = Image.open(path).convert("RGB")
     short = min(img.size)
     left, top = (img.size[0] - short) // 2, (img.size[1] - short) // 2
     img = img.crop((left, top, left + short, top + short)).resize((size, size), Image.LANCZOS)
-    return torch.from_numpy(np.asarray(img).astype(np.float32) / 255.0).unsqueeze(0)
+    return np.asarray(img)
+
+
+def to_tensor(u8):
+    import torch
+    return torch.from_numpy(np.ascontiguousarray(u8).astype(np.float32) / 255.0).unsqueeze(0)
+
+
+def load_image(path, size):
+    return to_tensor(load_image_u8(path, size))
 
 
 def to_u8(image):
@@ -98,7 +133,7 @@ def sheet(panels, path, title="", cell=CELL, columns=None):
 
 
 # --------------------------------------------------------------------------- #
-# the figures that need no model
+# the figures that need no model, and no server
 # --------------------------------------------------------------------------- #
 
 def demo_wheels(pack, image, out):
@@ -211,159 +246,196 @@ def demo_reference(pack, image, reference, out):
           title="Take the look from a picture, then adjust from there")
 
 
-def demo_luts(pack, image, out):
+# --------------------------------------------------------------------------- #
+# the figures the server makes
+# --------------------------------------------------------------------------- #
+
+def demo_luts(session, image_u8, image_name, out, size):
+    """The LUT node reads its tables through ComfyUI's model folders, so it
+    runs on the server — no model is involved, these are cheap prompts."""
     print(" luts")
-    node = pack.NODE_CLASS_MAPPINGS["ColorKitApplyLUT"]()
-    available = node.INPUT_TYPES()["required"]["lut_name"][0]
+    server = session.server
+    if not server.reachable:
+        print("   (no server, skipping)")
+        return
+    if server.object_info("ColorKitApplyLUT") is None:
+        print("   (the server has no ColorKitApplyLUT node, skipping)")
+        return
+    available = server.combo_options("ColorKitApplyLUT", "lut_name")
     chosen = [n for n in available if n.startswith("ColorKit")][:3]
     if not chosen:
-        print("   (no LUTs found, skipping)")
+        print("   (no LUTs found on the server, skipping)")
         return
 
-    panels = [(to_u8(image), "original", "")]
+    panels = [(image_u8, "original", "")]
     for name in chosen:
-        full, = node.apply(image, name, 1.0)
-        half, = node.apply(image, name, 0.5)
-        panels.append((to_u8(full), os.path.splitext(name)[0], "at full strength"))
-        panels.append((to_u8(half), "", "at half"))
+        full = session.generate(comfy_api.graph_lut(image_name, name, 1.0),
+                                f"16 luts / {name} at full", size, rest=False)
+        half = session.generate(comfy_api.graph_lut(image_name, name, 0.5),
+                                f"16 luts / {name} at half", size, rest=False)
+        panels.append((full, os.path.splitext(name)[0], "at full strength"))
+        panels.append((half, "", "at half"))
 
     sheet(panels, os.path.join(out, "16-luts.png"), columns=len(panels), cell=270,
           title="Any .cube loads, with a strength — film tables land heavily at full")
 
 
-# --------------------------------------------------------------------------- #
-
-def demo_with_model(pack, image, checkpoint, out, size=1024, steps=22):
+def demo_with_model(session, pack, image_u8, image_name, checkpoint, out, size=1024, steps=22):
     """The two places a grade can be applied, and what holding colour does."""
-    import comfy.sd
-    import nodes as comfy_nodes
-    import torch
+    gen = comfy_api.Generator(session, checkpoint, size, POSITIVE, NEGATIVE,
+                              steps=steps, cfg=6.0, sampler="dpmpp_2m", scheduler="karras",
+                              reference_image=image_name)
+    image = to_tensor(image_u8)
 
-    print(" loading the checkpoint")
-    memory("before loading")
-    started = time.time()
-    model, clip, vae = comfy.sd.load_checkpoint_guess_config(
-        checkpoint, output_vae=True, output_clip=True)[:3]
-    print(f"   loaded in {time.time() - started:.0f}s")
-    memory("after loading")
+    # 1. the same grade during sampling and after it
+    image_node = pack.NODE_CLASS_MAPPINGS["ImageColorGrade"]()
+    controls = {name: spec[1]["default"] for name, spec
+                in image_node.INPUT_TYPES()["required"].items() if name != "image"}
+    look = dict(controls)
+    look.update({"lift_b": 0.045, "gain_r": 0.055, "gain_b": -0.040,
+                 "saturation": 1.10})
+    grade = {"strength": 0.6, "start_percent": 0.30, "end_percent": 0.95}
+    grade.update(look)
 
-    try:
-        text = comfy_nodes.CLIPTextEncode()
-        positive, = text.encode(clip, "a harbour at dawn, boats, wet stone, photograph")
-        negative, = text.encode(clip, "blurry, low quality")
+    print(" grade during sampling vs after")
+    plain = gen.txt2img("20 during-vs-after / no grade", seed=99001)
+    during = gen.txt2img("20 during-vs-after / graded while sampling", seed=99001, grade=grade)
 
-        latent, = comfy_nodes.VAEEncode().encode(vae, image)
-        decode = comfy_nodes.VAEDecode()
+    after, = image_node.apply(to_tensor(plain), **look)
 
-        def sample(patched, source, denoise=1.0, seed=99001):
-            out_latent, = comfy_nodes.common_ksampler(
-                patched, seed, steps, 6.0, "dpmpp_2m", "karras",
-                positive, negative, source, denoise=denoise)
-            return to_u8(decode.decode(vae, out_latent)[0])
+    sheet([(plain, "no grade", "the model left alone"),
+           (to_u8(after), "graded afterwards", "a filter over a finished picture"),
+           (during, "graded while sampling", "the model composed it this way")],
+          os.path.join(out, "20-during-vs-after.png"),
+          title="The same wheels, applied in two places")
 
-        empty, = comfy_nodes.EmptyLatentImage().generate(size, size, 1)
+    # 2. holding colour through an img2img pass
+    print(" holding colour through img2img")
+    drifted = gen.img2img("21 holding colour / img2img at 0.75", seed=4242, denoise=0.75)
+    held = gen.img2img("21 holding colour / the same, colour held", seed=4242, denoise=0.75,
+                       guidance=comfy_api.guidance(0.6, start=0.15, end=0.9))
 
-        # 1. the same grade during sampling and after it
-        grade_node = pack.NODE_CLASS_MAPPINGS["LatentColorGrade"]()
-        image_node = pack.NODE_CLASS_MAPPINGS["ImageColorGrade"]()
-        controls = {name: spec[1]["default"] for name, spec
-                    in image_node.INPUT_TYPES()["required"].items() if name != "image"}
-        look = dict(controls)
-        look.update({"lift_b": 0.045, "gain_r": 0.055, "gain_b": -0.040,
-                     "saturation": 1.10})
+    scopes = pack.NODE_CLASS_MAPPINGS["ColorKitScopes"]()
+    sheet([(image_u8, "the source", "the colours to keep"),
+           (drifted, "img2img at 0.75", "the palette has wandered"),
+           (held, "the same, colour held", "same seed, same prompt")],
+          os.path.join(out, "21-holding-colour.png"),
+          title="An img2img pass drifts; the guidance node stops it")
 
-        print(" grade during sampling vs after")
-        plain = sample(model, empty)
-        graded_model, = grade_node.apply(model, strength=0.6, start_percent=0.30,
-                                         end_percent=0.95, **look)
-        during = sample(graded_model, empty)
-
-        plain_tensor = torch.from_numpy(plain.astype(np.float32) / 255).unsqueeze(0)
-        after, = image_node.apply(plain_tensor, **look)
-
-        sheet([(plain, "no grade", "the model left alone"),
-               (to_u8(after), "graded afterwards", "a filter over a finished picture"),
-               (during, "graded while sampling", "the model composed it this way")],
-              os.path.join(out, "20-during-vs-after.png"),
-              title="The same wheels, applied in two places")
-
-        # 2. holding colour through an img2img pass
-        print(" holding colour through img2img")
-        drifted = sample(model, latent, denoise=0.75, seed=4242)
-        guidance = pack.NODE_CLASS_MAPPINGS["ApplyLatentColorGuidance"]()
-        held_model, = guidance.apply(model, latent, strength=0.6, start_percent=0.15,
-                                     end_percent=0.9, method="auto", space="auto",
-                                     max_gain=2.0, lowpass=0)
-        held = sample(held_model, latent, denoise=0.75, seed=4242)
-
-        scopes = pack.NODE_CLASS_MAPPINGS["ColorKitScopes"]()
-        sheet([(to_u8(image), "the source", "the colours to keep"),
-               (drifted, "img2img at 0.75", "the palette has wandered"),
-               (held, "the same, colour held", "same seed, same prompt")],
-              os.path.join(out, "21-holding-colour.png"),
-              title="An img2img pass drifts; the guidance node stops it")
-
-        drift_scope, _ = scopes.measure(
-            torch.from_numpy(drifted.astype(np.float32) / 255).unsqueeze(0),
-            mode="vectorscope", size=360)
-        held_scope, _ = scopes.measure(
-            torch.from_numpy(held.astype(np.float32) / 255).unsqueeze(0),
-            mode="vectorscope", size=360)
-        source_scope, _ = scopes.measure(image, mode="vectorscope", size=360)
-        sheet([(to_u8(source_scope), "source", ""),
-               (to_u8(drift_scope), "drifted", "the cloud has moved"),
-               (to_u8(held_scope), "held", "back where it started")],
-              os.path.join(out, "22-holding-colour-scopes.png"),
-              title="The same three, on a vectorscope")
-
-    finally:
-        model = clip = vae = None
-        free_everything("the checkpoint")
+    drift_scope, _ = scopes.measure(to_tensor(drifted), mode="vectorscope", size=360)
+    held_scope, _ = scopes.measure(to_tensor(held), mode="vectorscope", size=360)
+    source_scope, _ = scopes.measure(image, mode="vectorscope", size=360)
+    sheet([(to_u8(source_scope), "source", ""),
+           (to_u8(drift_scope), "drifted", "the cloud has moved"),
+           (to_u8(held_scope), "held", "back where it started")],
+          os.path.join(out, "22-holding-colour-scopes.png"),
+          title="The same three, on a vectorscope")
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--comfy", required=True)
+    parser = argparse.ArgumentParser(
+        description="Render the showcase figures; sampling through a running ComfyUI.")
     parser.add_argument("--image", required=True)
     parser.add_argument("--reference")
     parser.add_argument("--out", default="docs/showcase")
     parser.add_argument("--size", type=int, default=768)
-    parser.add_argument("--with-model")
-    parser.add_argument("--lean", action="store_true")
-    parser.add_argument("--headroom", type=float,
-                        default=comfy_memory.DEFAULT_HEADROOM_GB,
-                        help="gigabytes of RAM to leave free (ComfyUI keeps "
-                             "only 2 unless told otherwise)")
+    parser.add_argument("--with-model", help="a checkpoint, as the server's Load Checkpoint lists it")
+    parser.add_argument("--server", default=comfy_api.DEFAULT_ADDRESS,
+                        help="host:port of the ComfyUI to use (default %(default)s)")
+    parser.add_argument("--gap", type=float, default=2.0,
+                        help="seconds to leave the GPU alone between generations "
+                             "(default %(default)s)")
+    parser.add_argument("--unload", action="store_true",
+                        help="ask the server to unload the model when done")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="build and validate every graph against the server, print them, "
+                             "queue nothing; the CPU figures go to a scratch folder")
     args = parser.parse_args()
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out = args.out if os.path.isabs(args.out) else os.path.join(root, args.out)
 
-    sys.path.insert(0, args.comfy)
-    os.chdir(args.comfy)
-
-    comfy_memory.before_comfy_imports(pinned=not args.lean, async_offload=not args.lean)
-    comfy_memory.configure(args.headroom)
+    server = comfy_api.Server(args.server)
+    if not server.ping():
+        if args.with_model and not args.dry_run:
+            raise SystemExit(server.unreachable_message())
+        print(f"  {server.unreachable_message()}")
+        print("  the pixel figures need no server; the LUT and sampling figures will be skipped")
 
     pack = load_pack(root)
-    image = load_image(args.image, args.size)
+    image_u8 = load_image_u8(args.image, args.size)
+    image = to_tensor(image_u8)
     reference = load_image(args.reference, args.size) if args.reference else None
+    image_name = f"colorkit_showcase_{args.size}.png"
+
+    if args.dry_run:
+        out = tempfile.mkdtemp(prefix="colorkit-showcase-dry-")
+        print(f"  dry run: everything goes to {out}")
 
     started = time.time()
-    memory("before")
     demo_wheels(pack, image, out)
     demo_presets(pack, image, out)
     demo_scopes(pack, image, out)
     demo_compare(pack, image, out)
-    demo_luts(pack, image, out)
     if reference is not None:
         demo_reference(pack, image, reference, out)
-    print(f"\n  no model needed so far: {time.time() - started:.0f}s")
-    memory("after the model-free figures")
+    print(f"\n  no server needed so far: {time.time() - started:.0f}s")
 
-    if args.with_model:
-        demo_with_model(pack, image, args.with_model, out, size=args.size)
-        print(f"\n  everything: {time.time() - started:.0f}s")
+    if not server.reachable and not args.dry_run:
+        return
+
+    checkpoint = None
+    if server.reachable:
+        try:
+            resolved = comfy_api.preflight(server, {"model": args.with_model})
+        except comfy_api.ServerError as exc:
+            raise SystemExit(f"  {exc}") from None
+        checkpoint = resolved.get("model")
+    else:
+        checkpoint = args.with_model
+
+    session = comfy_api.Session(server, gap=args.gap)
+
+    def server_figures(run_out):
+        demo_luts(session, image_u8, image_name, run_out, args.size)
+        if checkpoint:
+            demo_with_model(session, pack, image_u8, image_name, checkpoint, run_out,
+                            size=args.size)
+
+    # Pass one: every graph built and checked, nothing queued. A typo fails here.
+    scratch = tempfile.mkdtemp(prefix="colorkit-showcase-dry-")
+    session.dry_run = True
+    session.verbose = args.dry_run
+    session.dump_dir = scratch if args.dry_run else None
+    print("\nchecking every graph before anything is queued")
+    server_figures(scratch)
+    session.finish_dry()
+    if args.dry_run:
+        print(f"  dry run only; the graphs are in {scratch}")
+        return
+    shutil.rmtree(scratch, ignore_errors=True)
+
+    # Pass two: for real.
+    print(f"\nrendering to {out}")
+    print(server.memory_line())
+    server.upload_image(comfy_api.png_bytes(image_u8), image_name)
+    session.dry_run = False
+    session.built.clear()
+    try:
+        server_figures(out)
+    except KeyboardInterrupt:
+        print("\n  interrupted — the server was told to stop")
+        raise SystemExit(130)
+    finally:
+        if args.unload:
+            try:
+                server.free(unload_models=True)
+            except comfy_api.ServerError as exc:
+                print(f"  could not ask the server to unload: {exc}")
+
+    print(server.memory_line())
+    print(f"\n  everything: {time.time() - started:.0f}s "
+          f"({session.queued} generations, {session.seconds:.0f}s of them sampling)")
 
 
 if __name__ == "__main__":
