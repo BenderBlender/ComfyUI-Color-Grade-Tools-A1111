@@ -213,7 +213,14 @@ def piecewise_map(rgb: torch.Tensor, source: torch.Tensor,
     lower = torch.where(flat, torch.ones_like(lower), lower)
     upper = torch.where(flat, torch.ones_like(upper), upper)
 
-    below = t0 + (rgb - s0) * lower
+    # Both halves are anchored at the midtone rather than at their outer knot.
+    # Unclamped the two are identical — the lower segment still passes exactly
+    # through (s0, t0). Clamped they are not: anchoring each end separately
+    # would leave the two halves arriving at different values either side of
+    # the midtone, a step in the middle of the curve that shows up as a hard
+    # edge through the midtones. This way the map stays continuous and simply
+    # falls short of the outer targets, which is the honest failure.
+    below = t1 + (rgb - s1) * lower
     above = t1 + (rgb - s1) * upper
     mapped = torch.where(rgb < s1, below, above)
     return torch.where(flat, rgb + (t1 - s1), mapped)

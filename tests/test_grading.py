@@ -261,6 +261,198 @@ def test_widget_values_reach_the_grade():
     print("  typed values arrive as offsets from neutral")
 
 
+# --------------------------------------------------------------------------- #
+# grading towards levels
+# --------------------------------------------------------------------------- #
+
+def _space(channels=4):
+    from a1111_cc import space as S
+    torch.manual_seed(7)
+    return S.LatentColorSpace.rgb(torch.randn(channels, 3) * 0.3, channels=channels)
+
+
+def test_levels_land_on_the_reference():
+    """With an anchor the image takes that picture's shadows and highlights."""
+    source = torch.rand(1, 3, 48, 48) * 0.4 + 0.1
+    reference = torch.rand(1, 3, 32, 32) * 0.9 + 0.05
+    out = G.grade_levels(source, G.Grade(), reference)
+
+    got = G.channel_levels(out)
+    want = G.channel_levels(reference)
+    assert torch.allclose(got, want, atol=0.03), (got, want)
+    print(f"  mean {float(source.mean()):.3f} -> {float(out.mean()):.3f} "
+          f"(reference {float(reference.mean()):.3f})")
+
+
+def test_matching_is_idempotent():
+    """Applied twice it must say the same thing — that is what converging means."""
+    source = torch.rand(1, 3, 48, 48)
+    reference = torch.rand(1, 3, 48, 48) * 0.6 + 0.2
+    once = G.grade_levels(source, G.Grade(), reference)
+    twice = G.grade_levels(once, G.Grade(), reference)
+    assert torch.allclose(once, twice, atol=1e-3), float((once - twice).abs().max())
+
+
+def test_a_flat_source_is_shifted_not_stretched():
+    """Dividing by a tiny range would multiply contrast by a hundred."""
+    flat = torch.full((1, 3, 16, 16), 0.5)
+    reference = torch.rand(1, 3, 16, 16)
+    out = G.grade_levels(flat, G.Grade(), reference)
+    assert torch.isfinite(out).all()
+    assert float(out.std()) < 0.1, float(out.std())
+    print(f"  flat source keeps its shape: std {float(out.std()):.4f}")
+
+
+def test_slopes_are_clamped():
+    """A tight source must not be stretched without limit onto a wide target."""
+    narrow = torch.rand(1, 3, 32, 32) * 0.08 + 0.46       # a very tight range
+    wide = torch.rand(1, 3, 32, 32)
+    out = G.grade_levels(narrow, G.Grade(), wide)
+
+    before = G.channel_levels(narrow)
+    after = G.channel_levels(out)
+    stretch = float(((after[..., 2] - after[..., 0]) /
+                     (before[..., 2] - before[..., 0])).max())
+    assert stretch <= G.MAX_SLOPE + 0.01, stretch
+    print(f"  range stretched {stretch:.2f}x, capped at {G.MAX_SLOPE}")
+
+
+def test_the_map_has_no_step_in_it():
+    """Clamping the slopes must not leave the two halves disagreeing.
+
+    Anchoring each half at its own outer knot looked right and was not: with
+    the slopes capped the halves arrived at different values either side of
+    the midtone, a jump of 0.29 straight through the midtones.
+    """
+    source = torch.tensor([[[0.46, 0.50, 0.54]]])
+    target = torch.tensor([[[0.05, 0.49, 0.95]]])          # needs slope 12
+
+    probe = torch.linspace(0.3, 0.7, 4001).reshape(1, 1, 1, -1)
+    mapped = G.piecewise_map(probe, source, target).flatten()
+    jumps = (mapped[1:] - mapped[:-1]).abs()
+    assert float(jumps.max()) < 0.01, float(jumps.max())
+
+    # and it still passes exactly through the midtone it was asked for
+    mid = G.piecewise_map(source[..., 1].reshape(1, 1, 1, 1), source, target)
+    assert abs(float(mid) - 0.49) < 1e-5, float(mid)
+    print(f"  largest step across the curve: {float(jumps.max()):.2e}")
+
+
+def test_an_unclamped_map_hits_every_knot():
+    """When nothing is capped the curve passes through all three targets."""
+    source = torch.tensor([[[0.20, 0.50, 0.80]]])
+    target = torch.tensor([[[0.30, 0.55, 0.75]]])          # gentle, no clamping
+    probe = source.reshape(1, 1, 1, 3)
+    got = G.piecewise_map(probe, source, target).flatten()
+    assert torch.allclose(got, target.flatten(), atol=1e-5), got
+
+
+def test_saturation_is_not_run_through_percentiles():
+    """It mixes channels, so three per-channel levels cannot express it."""
+    rgb = torch.rand(1, 3, 32, 32)
+    out = G.grade_levels(rgb, G.Grade(saturation=0.0), rgb)
+    spread = float((out.max(dim=1).values - out.min(dim=1).values).max())
+    assert spread < 1e-4, spread
+
+
+def test_a_single_reference_serves_a_batch():
+    out = G.grade_levels(torch.rand(4, 3, 16, 16), G.Grade(), torch.rand(1, 3, 16, 16))
+    assert out.shape == (4, 3, 16, 16)
+    assert torch.isfinite(out).all()
+
+
+# --------------------------------------------------------------------------- #
+# the sampling hook
+# --------------------------------------------------------------------------- #
+
+def test_a_neutral_grade_survives_a_changing_prediction():
+    """The reason the first attempt at this was wrong.
+
+    Early in sampling x0 is blurred and its spread is a fraction of the
+    finished image's. Anchoring to it would squeeze contrast a little further
+    on every step — so a neutral grade is checked against exactly that.
+    """
+    N = _node_module()
+    corrector = N.GradeCorrector(_space(), G.Grade(), 0.5)
+
+    worst = 0.0
+    for scale in (0.3, 0.3, 1.0, 1.0, 1.0, 1.0):
+        x = torch.randn(1, 4, 32, 32) * scale
+        out = corrector(x, None)
+        worst = max(worst, float((out - x).abs().max()),
+                    abs(float(out.std() - x.std())))
+    assert worst < 1e-4, worst
+    print(f"  neutral grade moves nothing: worst {worst:.2e}")
+
+
+def test_the_hook_converges_instead_of_compounding():
+    N = _node_module()
+    grade = G.Grade(gain=G.Wheel(red=0.10), lift=G.Wheel(master=0.05))
+    corrector = N.GradeCorrector(_space(), grade, 0.5)
+
+    x = torch.randn(1, 4, 32, 32)
+    steps = []
+    for _ in range(12):
+        nxt = corrector(x, None)
+        steps.append(float((nxt - x).abs().mean()))
+        x = nxt
+
+    assert steps[-1] < steps[0] * 0.02, steps
+    assert all(b <= a + 1e-6 for a, b in zip(steps, steps[1:])), steps
+    print(f"  steps {steps[0]:.3f} -> {steps[3]:.3f} -> {steps[-1]:.5f}")
+
+
+def test_state_is_dropped_when_a_new_run_starts():
+    """ComfyUI hands back the same patched model while the inputs are
+    unchanged, so one seed's targets must not steer the next."""
+    N = _node_module()
+    corrector = N.GradeCorrector(_space(), G.Grade(gain=G.Wheel(red=0.1)), 0.5)
+
+    x = torch.randn(1, 4, 32, 32)
+    for sigma in (14.0, 7.0, 3.0, 1.0):
+        x = corrector(x, sigma)
+    assert corrector._injected is not None
+
+    corrector(torch.randn(1, 4, 32, 32), 14.0)      # sigma jumped back up
+    assert corrector._last_sigma == 14.0
+
+
+def test_a_mid_run_sigma_wobble_does_not_reset():
+    """Samplers that evaluate the model twice per step report the same sigma
+    twice, and some move it slightly; only a real jump counts."""
+    N = _node_module()
+    corrector = N.GradeCorrector(_space(), G.Grade(gain=G.Wheel(red=0.1)), 0.5)
+    x = torch.randn(1, 4, 32, 32)
+    for sigma in (12.0, 12.0, 11.8, 11.9, 9.0, 9.0):
+        x = corrector(x, sigma)
+        assert corrector._injected is not None, sigma
+
+
+def test_an_anchor_fixes_the_targets():
+    N = _node_module()
+    space = _space()
+    anchor = space.forward(torch.randn(1, 4, 32, 32) * 0.7)
+    corrector = N.GradeCorrector(space, G.Grade(), 1.0, anchor)
+
+    first = corrector(torch.randn(1, 4, 32, 32), 10.0)
+    second = corrector(torch.randn(1, 4, 32, 32), 5.0)
+    assert corrector._injected is None, "an anchored grade needs no injection tracking"
+    assert torch.isfinite(first).all() and torch.isfinite(second).all()
+
+
+def test_anchor_and_wheels_together():
+    N = _node_module()
+    space = _space()
+    anchor = space.forward(torch.randn(1, 4, 32, 32))
+    plain = N.GradeCorrector(space, G.Grade(), 1.0, anchor)
+    warmed = N.GradeCorrector(space, G.Grade(gain=G.Wheel(red=0.12)), 1.0, anchor)
+
+    x = torch.randn(1, 4, 32, 32)
+    a = space.forward(plain(x, 5.0))
+    b = space.forward(warmed(x, 5.0))
+    assert float(b[:, 0].mean()) > float(a[:, 0].mean()), "the wheel should sit on top"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
