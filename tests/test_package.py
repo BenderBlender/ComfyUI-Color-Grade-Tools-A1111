@@ -194,6 +194,29 @@ def test_every_node_describes_itself():
     assert not problems, "\n  ".join(problems)
 
 
+def test_wheels_widget_is_not_saved():
+    """The colour wheels must stay out of a workflow's widgets_values.
+
+    The wheels are a drawn widget with no value of its own; the numbers live in
+    the hidden sliders. ComfyUI's editor has two separate flags: options.serialize
+    keeps a widget out of the prompt sent to the server, the widget's own
+    serialize keeps it out of the saved workflow. With only the first set, the
+    wheels took slot 0 of widgets_values and every slider loaded one place off —
+    gamma_master read 0, gain_b read 1 — which no check of the JSON can see.
+    """
+    import re
+
+    with open(os.path.join(ROOT, "web", "colorwheels.js"), encoding="utf-8") as handle:
+        source = handle.read()
+    literal = re.search(r'name:\s*"colour_wheels"(.*?)computeSize', source, re.S)
+    assert literal, "could not find the colour_wheels widget literal"
+    assert re.search(r"\n\s*serialize:\s*false\s*,", literal.group(1)), (
+        "the wheels widget lacks a top-level `serialize: false` — "
+        "options.serialize alone still saves it into widgets_values")
+    # workflows saved before the fix carry one extra leading value; the shim drops it
+    assert "values.length === slots + 1" in source, "the legacy widgets_values shim is gone"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

@@ -188,6 +188,11 @@ function makeWidget() {
   const widget = {
     name: "colour_wheels",
     type: "colorkit_wheels",
+    // Both flags are needed. options.serialize keeps it out of the prompt sent to
+    // the server; serialize keeps it out of the workflow's widgets_values. It holds
+    // no value of its own — the numbers live in the hidden sliders — and a saved
+    // slot here, first in the list, shifted every slider value by one on load.
+    serialize: false,
     options: { serialize: false },
     value: null,
 
@@ -427,6 +432,18 @@ app.registerExtension({
       this.size[0] = Math.max(this.size[0], 640);
       this.size[1] = this.computeSize()[1];
       return result;
+    };
+
+    // Workflows saved while the wheels were still serialized carry one extra
+    // leading value, the wheels' own. Drop it so they load onto the right sliders.
+    const configure = nodeType.prototype.configure;
+    nodeType.prototype.configure = function (info) {
+      const values = info?.widgets_values;
+      const slots = this.widgets?.filter((w) => w.serialize !== false).length;
+      if (Array.isArray(values) && slots && values.length === slots + 1) {
+        info = { ...info, widgets_values: values.slice(1) };
+      }
+      return configure.call(this, info);
     };
 
     const getExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;

@@ -336,10 +336,8 @@
      "localized_name": "ipadapter",
      "name": "ipadapter",
      "type": "IPADAPTER",
-     "widget": {
-      "name": "ipadapter"
-     },
-     "link": null
+     "link": null,
+     "shape": 7
     }
    ],
    "outputs": [
@@ -364,8 +362,7 @@
     "Node name for S&R": "IPAdapterUnifiedLoader"
    },
    "widgets_values": [
-    "PLUS (high strength)",
-    ""
+    "PLUS (high strength)"
    ]
   },
   {
@@ -393,9 +390,6 @@
      "localized_name": "ipadapter",
      "name": "ipadapter",
      "type": "IPADAPTER",
-     "widget": {
-      "name": "ipadapter"
-     },
      "link": 3
     },
     {
@@ -476,10 +470,8 @@
      "localized_name": "clip_vision",
      "name": "clip_vision",
      "type": "CLIP_VISION",
-     "widget": {
-      "name": "clip_vision"
-     },
-     "link": null
+     "link": null,
+     "shape": 7
     }
    ],
    "outputs": [
@@ -497,14 +489,12 @@
     "Node name for S&R": "IPAdapterAdvanced"
    },
    "widgets_values": [
-    "",
     0.8,
     "linear",
     "concat",
     0.0,
     1.0,
-    "V only",
-    ""
+    "V only"
    ]
   },
   {

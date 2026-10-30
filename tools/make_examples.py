@@ -1,24 +1,65 @@
 """Generate the example workflows in examples/ from the live node definitions.
 
 Hand-written workflow JSON goes stale the moment a node gains or loses an
-input. Building it from ``INPUT_TYPES`` instead means the examples always
-match the nodes that ship beside them.
+input. Building it from the definitions the running server publishes
+(``GET /object_info``) means the examples always match the nodes that ship
+beside them — and are read from the same source the editor builds its widgets
+from, so what is written is what the editor expects. Start ComfyUI, then:
 
-    python_embeded\\python.exe tools/make_examples.py \\
-        --comfy M:/ComfyUI-Easy-Install_9_work_1/ComfyUI-Easy-Install/ComfyUI
+    python tools/make_examples.py [--server 127.0.0.1:8188]
+
+The published examples leave the checkpoint empty. For a copy that opens ready
+to queue, point --out at the ComfyUI user's workflow folder and name the model
+exactly as the server lists it — ComfyUI builds those names with os.path.relpath,
+so on Windows they carry backslashes, and a forward slash fails validation with
+"Value not in list":
+
+    python tools/make_examples.py --out <ComfyUI>/user/default/workflows/ColorKit \\
+        --checkpoint "SDXL\\protovisionXLHighFidelity3D_releaseV660Bakedvae.safetensors"
 """
 
 import argparse
-import importlib.util
 import json
 import os
 import sys
+import urllib.request
 
-# Socket types are wired; everything else becomes a widget.
-LINK_TYPES = {
-    "MODEL", "CLIP", "VAE", "CONDITIONING", "LATENT", "IMAGE", "MASK",
-    "CONTROL_NET", "UPSCALE_MODEL", "GUIDER", "SAMPLER", "SIGMAS", "NOISE",
-}
+# ComfyUI makes a widget of exactly these input types; every other type is a
+# socket for a wire — the core ones and any a custom pack invents (IPADAPTER,
+# CLIP_VISION, ...). The rule here used to be the other way round, a list of
+# socket types with a widget for anything else, and the first foreign type an
+# example used became a phantom widget that shifted every value after it.
+WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
+
+
+# The checkpoint the loaders start on. Left empty for the published examples,
+# since nobody else has the same file; set with --checkpoint for a personal copy.
+CHECKPOINT = None
+
+
+def _checkpoint():
+    # Always explicit: the server's dropdown lists THIS machine's files, and its
+    # first entry is no default for anybody else.
+    return {"ckpt_name": CHECKPOINT}
+
+
+class ServerNode:
+    """A node as the running server describes it, shaped like a node class."""
+
+    def __init__(self, info):
+        given = info.get("input", {})
+        order = info.get("input_order") or {}
+        self._inputs = {}
+        for section in ("required", "optional"):
+            entries = given.get(section) or {}
+            # the editor lays widgets out in input_order; fall back to the dict's own order
+            names = [n for n in order.get(section, []) if n in entries] or list(entries)
+            self._inputs[section] = {n: entries[n] for n in names}
+        self.RETURN_TYPES = tuple(info.get("output") or ())
+        self.RETURN_NAMES = tuple(info.get("output_name") or self.RETURN_TYPES)
+
+    def INPUT_TYPES(self):
+        return self._inputs
 
 
 class Workflow:
@@ -41,24 +82,28 @@ class Workflow:
             kind = definition[0]
             opts = definition[1] if len(definition) > 1 and isinstance(definition[1], dict) else {}
 
-            if isinstance(kind, (list, tuple)):          # a dropdown
+            # dropdowns come either as a bare list or as "COMBO" with its options
+            choices = kind if isinstance(kind, (list, tuple)) else (
+                opts.get("options") if kind == "COMBO" else None)
+            forced = opts.get("forceInput")              # a widget type shown as a socket
+            if choices is not None and not forced:
                 inputs.append({"localized_name": name, "name": name, "type": "COMBO",
                                "widget": {"name": name}, "link": None})
                 widget_names.append(name)
-                widgets.append(opts.get("default", kind[0] if kind else None))
-            elif isinstance(kind, str) and kind in LINK_TYPES:
-                entry = {"localized_name": name, "name": name, "type": kind, "link": None}
-                if name in optional:
-                    entry["shape"] = 7                   # the dashed "optional" dot
-                inputs.append(entry)
-            else:                                        # INT / FLOAT / STRING / BOOLEAN
-                inputs.append({"localized_name": name, "name": name, "type": str(kind),
+                widgets.append(opts.get("default", choices[0] if choices else None))
+            elif isinstance(kind, str) and kind in WIDGET_TYPES and not forced:
+                inputs.append({"localized_name": name, "name": name, "type": kind,
                                "widget": {"name": name}, "link": None})
                 widget_names.append(name)
                 widgets.append(opts.get("default", ""))
                 if opts.get("control_after_generate"):
                     widget_names.append(f"{name}_control")
                     widgets.append("fixed")
+            else:                                        # a socket, wired or left open
+                entry = {"localized_name": name, "name": name, "type": str(kind), "link": None}
+                if name in optional:
+                    entry["shape"] = 7                   # the dashed "optional" dot
+                inputs.append(entry)
 
         if values:
             for name, value in values.items():
@@ -139,7 +184,8 @@ def build_img2img(core, pack, out):
         "brightness.",
         (-480, 40), (420, 300))
 
-    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
+                 values=_checkpoint(), size=(340, 100))
     load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
                 {"text": "a photograph, natural light, fine detail"}, (380, 120), "Positive")
@@ -192,7 +238,8 @@ def build_guidance(core, pack, out):
         "Bypass the patch node (Ctrl+B) to see the difference.",
         (-480, 40), (420, 380))
 
-    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
+                 values=_checkpoint(), size=(340, 100))
     load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
     enc = w.add(core["VAEEncode"], "VAEEncode", (400, 560), size=(240, 60),
                 title="Reference latent")
@@ -239,7 +286,8 @@ def build_both(core, pack, out):
         "sampling starts — useful when the input itself is already off.",
         (-480, 40), (420, 320))
 
-    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
+                 values=_checkpoint(), size=(340, 100))
     load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
     enc = w.add(core["VAEEncode"], "VAEEncode", (400, 560), size=(240, 60),
                 title="Reference latent")
@@ -302,7 +350,8 @@ def build_loopback(core, pack, out):
         "`all_passes` is every pass as a batch — scrub it to see the progression.",
         (-500, 40), (440, 420))
 
-    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
+                 values=_checkpoint(), size=(340, 100))
     load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
                 {"text": "a photograph, natural light, fine detail"}, (380, 120), "Positive")
@@ -379,7 +428,8 @@ def build_grade_latent(core, pack, out):
         "limit it to part of the schedule.",
         (-520, 40), (460, 430))
 
-    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
+                 values=_checkpoint(), size=(340, 100))
     empty = w.add(core["EmptyLatentImage"], "EmptyLatentImage", (20, 180),
                   {"width": 1024, "height": 1024}, (340, 110))
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (20, 330),
@@ -444,7 +494,8 @@ def build_ipadapter(core, pack, out):
         "will say so if they are not.",
         (-540, 40), (480, 440))
 
-    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
+                 values=_checkpoint(), size=(340, 100))
     load = w.add(core["LoadImage"], "LoadImage", (20, 190), size=(340, 320),
                  title="The reference — style and colour both come from here")
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (20, 540),
@@ -526,62 +577,44 @@ def build_ipadapter(core, pack, out):
     w.dump(os.path.join(out, "07_ipadapter_with_colorkit.json"))
 
 
-def _extra_packs(comfy_root, wanted=("ComfyUI_IPAdapter_plus",)):
-    """Load the other custom-node packs an example needs.
-
-    ``import nodes`` only brings ComfyUI's own; a workflow that uses someone
-    else's has to be built against their real definitions, or the inputs it
-    writes will not match what the editor expects.
-    """
-    found = {}
-    for name in wanted:
-        base = os.path.join(comfy_root, "custom_nodes", name)
-        init = os.path.join(base, "__init__.py")
-        if not os.path.exists(init):
-            continue
-        try:
-            spec = importlib.util.spec_from_file_location(
-                f"extra_{name}", init, submodule_search_locations=[base])
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[spec.name] = module
-            spec.loader.exec_module(module)
-            found.update(getattr(module, "NODE_CLASS_MAPPINGS", {}))
-            print(f"  using {name}: {len(found)} nodes")
-        except Exception as exc:  # noqa: BLE001
-            print(f"  could not load {name}: {exc!r}")
-    return found
+# what the seven examples cannot be built without
+NEEDED = ("CheckpointLoaderSimple", "LoadImage", "KSampler", "ImageColorGrade",
+          "LatentColorGrade", "ApplyLatentColorGuidance", "IPAdapterUnifiedLoader",
+          "IPAdapterAdvanced")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--comfy", required=True)
+    ap.add_argument("--server", default="127.0.0.1:8188",
+                    help="a running ComfyUI with this pack and IPAdapter Plus installed")
     ap.add_argument("--out", default="")
+    ap.add_argument("--checkpoint", default=None,
+                    help="ckpt_name for every checkpoint loader, exactly as the server "
+                         "lists it (on Windows with backslashes, e.g. SDXL\\model.safetensors)")
     args = ap.parse_args()
+
+    global CHECKPOINT
+    CHECKPOINT = args.checkpoint
 
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out = args.out or os.path.join(here, "examples")
 
-    sys.path.insert(0, args.comfy)
-    os.chdir(args.comfy)
-    import nodes as comfy_nodes
+    try:
+        with urllib.request.urlopen(f"http://{args.server}/object_info", timeout=60) as resp:
+            info = json.load(resp)
+    except OSError as exc:
+        sys.exit(f"no ComfyUI answering at {args.server} ({exc}) — start it, or pass --server")
 
-    spec = importlib.util.spec_from_file_location(
-        "A1111CCPack", os.path.join(here, "__init__.py"), submodule_search_locations=[here])
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["A1111CCPack"] = module
-    spec.loader.exec_module(module)
+    nodes = {name: ServerNode(definition) for name, definition in info.items()}
+    missing = [name for name in NEEDED if name not in nodes]
+    if missing:
+        sys.exit(f"the server at {args.server} has no {missing} — "
+                 "are this pack and IPAdapter Plus installed in that ComfyUI?")
+    os.makedirs(out, exist_ok=True)
 
-    core = dict(comfy_nodes.NODE_CLASS_MAPPINGS)
-    core.update(_extra_packs(args.comfy))
-    pack = module.NODE_CLASS_MAPPINGS
-
-    build_img2img(core, pack, out)
-    build_guidance(core, pack, out)
-    build_both(core, pack, out)
-    build_loopback(core, pack, out)
-    build_grade_image(core, pack, out)
-    build_grade_latent(core, pack, out)
-    build_ipadapter(core, pack, out)
+    for build in (build_img2img, build_guidance, build_both, build_loopback,
+                  build_grade_image, build_grade_latent, build_ipadapter):
+        build(nodes, nodes, out)
 
 
 if __name__ == "__main__":

@@ -2,10 +2,14 @@
 
 A workflow that fails to open is worse than no example at all, so every file
 in examples/ is checked for internal consistency, and every node type it uses
-is checked to actually exist — ours against this package, ComfyUI's against
-the running install when one is given.
+is checked to actually exist against a running ComfyUI when one is given.
 
-    python tests/test_examples.py [--comfy PATH]
+    python tests/test_examples.py [--server 127.0.0.1:8188]
+
+The widget rule is written here on its own, not imported from the generator:
+the two once shared an inverted rule and agreed with each other while the
+editor shifted IP-Adapter's values by one slot. A check that borrows the
+checked code's assumptions cannot catch them.
 """
 
 import argparse
@@ -18,42 +22,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 EXAMPLES = os.path.join(ROOT, "examples")
 
-
-def load_pack_types():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "A1111CCPackTypes", os.path.join(ROOT, "__init__.py"),
-        submodule_search_locations=[ROOT])
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["A1111CCPackTypes"] = module
-    try:
-        spec.loader.exec_module(module)
-    except Exception:  # noqa: BLE001 - needs ComfyUI for the latent nodes
-        return None
-    return module.NODE_CLASS_MAPPINGS
-
-
-def _other_packs(comfy_root, wanted=("ComfyUI_IPAdapter_plus",)):
-    """Node types an example borrows from another pack, so that they are not
-    reported as unknown when that pack is installed."""
-    import importlib.util
-
-    found = {}
-    for name in wanted:
-        init = os.path.join(comfy_root, "custom_nodes", name, "__init__.py")
-        if not os.path.exists(init):
-            continue
-        try:
-            spec = importlib.util.spec_from_file_location(
-                f"check_{name}", init,
-                submodule_search_locations=[os.path.dirname(init)])
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[spec.name] = module
-            spec.loader.exec_module(module)
-            found.update(getattr(module, "NODE_CLASS_MAPPINGS", {}))
-        except Exception:  # noqa: BLE001 - a missing pack is not a test failure
-            pass
-    return found
+# the only input types ComfyUI's editor turns into widgets
+WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
 
 
 def check_workflow(path, known_types=None):
@@ -108,6 +78,11 @@ def check_workflow(path, known_types=None):
             link_id = inp.get("link")
             if link_id is not None and link_id not in seen_links:
                 problems.append(f"{node['type']}.{inp['name']} points at missing link {link_id}")
+        for inp in node["inputs"]:
+            if "widget" in inp and inp.get("type") not in WIDGET_TYPES:
+                problems.append(
+                    f"{node['type']}.{inp['name']}: a {inp.get('type')} socket written as a "
+                    "widget — the editor gives it no widget, so every value after it shifts")
         widgets = [i for i in node["inputs"] if "widget" in i]
         values = node.get("widgets_values", [])
         if len(values) < len(widgets):
@@ -127,19 +102,15 @@ def check_workflow(path, known_types=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--comfy", default="", help="ComfyUI checkout, to validate core node types")
+    ap.add_argument("--server", default="",
+                    help="a running ComfyUI, to check that every node type exists there")
     args = ap.parse_args()
 
     known = None
-    if args.comfy:
-        sys.path.insert(0, args.comfy)
-        os.chdir(args.comfy)
-        import nodes as comfy_nodes
-        known = dict(comfy_nodes.NODE_CLASS_MAPPINGS)
-        known.update(_other_packs(args.comfy))
-        pack = load_pack_types()
-        if pack:
-            known.update(pack)
+    if args.server:
+        import urllib.request
+        with urllib.request.urlopen(f"http://{args.server}/object_info", timeout=60) as resp:
+            known = json.load(resp)
 
     files = sorted(glob.glob(os.path.join(EXAMPLES, "*.json")))
     assert files, "no example workflows found"

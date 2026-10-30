@@ -292,7 +292,7 @@ own step count.
 python tests/test_color.py          # image maths, incl. A1111 parity   (14)
 python tests/test_latent_core.py    # statistics, transfers, projection (30)
 python tests/test_loopback.py       # the chain, with sampler and VAE stubbed (24)
-python tests/test_examples.py       # the example workflows stay loadable
+python tests/test_examples.py       # the example workflows stay loadable (--server HOST:PORT also checks node types)
 python tests/test_package.py        # the package compiles, imports, keeps its keys (5)
 ```
 
