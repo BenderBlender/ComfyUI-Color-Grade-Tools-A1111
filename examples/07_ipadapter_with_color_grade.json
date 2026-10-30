@@ -1,5 +1,5 @@
 {
- "id": "07_ipadapter_with_colorkit",
+ "id": "07_ipadapter_with_color_grade",
  "revision": 0,
  "last_node_id": 20,
  "last_link_id": 29,
@@ -23,7 +23,7 @@
    "title": "Read me",
    "properties": {},
    "widgets_values": [
-    "## IP-Adapter, and IP-Adapter with the colour held\n\nBoth take something from the same reference picture, but not the same thing. IP-Adapter encodes it with CLIP Vision and feeds the result into the model's attention, which carries **subject, style and texture**. It is famously loose about the palette: the look arrives, the exact colours wander.\n\nThe ColorKit node measures the reference's **colour** and holds the prediction to it. Different hook, different quantity, no conflict — one patches attention, the other patches the noise prediction.\n\nBoth branches run the **same seed**, so the only difference is the colour node. The comparison at the end is the point of the graph.\n\n**Before running:** pick an SDXL checkpoint, and make sure the IP-Adapter models and CLIP Vision are in place — the unified loader will say so if they are not."
+    "## IP-Adapter, and IP-Adapter with the colour held\n\nBoth take something from the same reference picture, but not the same thing. IP-Adapter encodes it with CLIP Vision and feeds the result into the model's attention, which carries **subject, style and texture**. It is famously loose about the palette: the look arrives, the exact colours wander.\n\nThe Latent Color Guidance node measures the reference's **colour** and holds the prediction to it. Different hook, different quantity, no conflict — one patches attention, the other patches the noise prediction.\n\nBoth branches run the **same seed**, so the only difference is the colour node. The comparison at the end is the point of the graph.\n\n**Before running:** pick an SDXL checkpoint, and make sure the IP-Adapter models and CLIP Vision are in place — the unified loader will say so if they are not."
    ],
    "color": "#432",
    "bgcolor": "#653"
@@ -135,7 +135,7 @@
     "Node name for S&R": "LoadImage"
    },
    "widgets_values": [
-    "00 (1).png"
+    "example.png"
    ],
    "title": "The reference — style and colour both come from here"
   },
@@ -907,7 +907,7 @@
     "karras",
     1.0
    ],
-   "title": "IP-Adapter + ColorKit"
+   "title": "IP-Adapter + Color Grade"
   },
   {
    "id": 13,

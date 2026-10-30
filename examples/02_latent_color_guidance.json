@@ -23,7 +23,7 @@
    "title": "Read me",
    "properties": {},
    "widgets_values": [
-    "## Apply Latent Color Guidance\n\nInstead of repairing the colours afterwards, hold them during sampling. The patch corrects the model's own prediction at every step, so the image is composed in the right palette rather than pushed into it.\n\nIt patches `MODEL`, so **any** sampler works downstream — KSampler, KSamplerAdvanced, SamplerCustom, detailers.\n\n- `strength` 0.4-0.7 is the usual range.\n- `start_percent` 0.15 skips the first steps, where the prediction is still featureless and its spread means nothing.\n- `space = auto` projects through the model's own latent-to-RGB matrix, so this works on SD1.5, SDXL, SD3, Flux and the video models alike.\n\nBypass the patch node (Ctrl+B) to see the difference."
+    "## Latent Color Guidance\n\nInstead of repairing the colours afterwards, hold them during sampling. The patch corrects the model's own prediction at every step, so the image is composed in the right palette rather than pushed into it.\n\nIt patches `MODEL`, so **any** sampler works downstream — KSampler, KSamplerAdvanced, SamplerCustom, detailers.\n\n- `strength` 0.4-0.7 is the usual range.\n- `start_percent` 0.15 skips the first steps, where the prediction is still featureless and its spread means nothing.\n- `space = auto` projects through the model's own latent-to-RGB matrix, so this works on SD1.5, SDXL, SD3, Flux and the video models alike.\n\nBypass the patch node (Ctrl+B) to see the difference."
    ],
    "color": "#432",
    "bgcolor": "#653"
@@ -133,7 +133,7 @@
     "Node name for S&R": "LoadImage"
    },
    "widgets_values": [
-    "00 (1).png"
+    "example.png"
    ]
   },
   {

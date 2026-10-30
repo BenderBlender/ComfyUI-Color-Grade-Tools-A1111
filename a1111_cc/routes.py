@@ -51,7 +51,7 @@ def register() -> bool:
         try:
             presets.save_user(stored)
         except OSError as exc:
-            log.exception("ColorKit: could not save presets")
+            log.exception("Color Grade: could not save presets")
             return web.json_response({"error": str(exc)}, status=500)
         return web.json_response({"user": stored})
 
@@ -68,5 +68,5 @@ def register() -> bool:
             return web.json_response({"error": str(exc)}, status=500)
         return web.json_response({"user": stored})
 
-    log.info("ColorKit: preset routes ready")
+    log.info("Color Grade: preset routes ready")
     return True

@@ -23,7 +23,7 @@
    "title": "Read me",
    "properties": {},
    "widgets_values": [
-    "## Both stages together\n\nThe usual production setup for an upscale or refine pass that has to keep the original palette:\n\n1. **Apply Latent Color Guidance** holds the colour while the model works, so it never commits to the wrong palette.\n2. **A1111 Color Correction** cleans up whatever drift is left after the decode, which is cheap and exact.\n\n`Latent Color Match` is also wired here, running on the init latent before sampling starts — useful when the input itself is already off."
+    "## Both stages together\n\nThe usual production setup for an upscale or refine pass that has to keep the original palette:\n\n1. **Latent Color Guidance** holds the colour while the model works, so it never commits to the wrong palette.\n2. **A1111 Color Correction** cleans up whatever drift is left after the decode, which is cheap and exact.\n\n`Latent Color Match` is also wired here, running on the init latent before sampling starts — useful when the input itself is already off."
    ],
    "color": "#432",
    "bgcolor": "#653"
@@ -135,7 +135,7 @@
     "Node name for S&R": "LoadImage"
    },
    "widgets_values": [
-    "00 (1).png"
+    "example.png"
    ]
   },
   {

@@ -59,7 +59,7 @@ class ColorKitScopes:
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("scopes", "clipping")
     FUNCTION = "measure"
-    CATEGORY = "ColorKit/inspect"
+    CATEGORY = "Color Grade Tools/inspect"
     DESCRIPTION = (
         "Vectorscope, waveform and histogram drawn as an image, so a grade can be "
         "judged by what it did rather than by how it looks on an unprofiled monitor."
@@ -70,7 +70,7 @@ class ColorKitScopes:
 
         if latent is not None:
             if model is None:
-                log.warning("ColorKit Scopes: a latent needs the model as well, to "
+                log.warning("Color Grade Scopes: a latent needs the model as well, to "
                             "read its latent-to-RGB matrix; showing the image instead.")
             else:
                 planes = self._project(latent, model, planes)
@@ -92,7 +92,7 @@ class ColorKitScopes:
             samples = latent["samples"]
             space = glue.detect_space(model, samples, "auto")
             if space.kind == "raw":
-                log.warning("ColorKit Scopes: this model ships no latent-to-RGB "
+                log.warning("Color Grade Scopes: this model ships no latent-to-RGB "
                             "matrix, so a latent cannot be shown; using the image.")
                 return fallback
             projected = space.forward(glue.to_model_space(model, samples).float())
@@ -100,7 +100,7 @@ class ColorKitScopes:
                 projected = projected[:, :, 0]
             return ((projected + 1.0) * 0.5).clamp(0.0, 1.0)
         except Exception as exc:  # noqa: BLE001 - a scope must not stop a render
-            log.warning("ColorKit Scopes: could not read the latent (%r); "
+            log.warning("Color Grade Scopes: could not read the latent (%r); "
                         "showing the image.", exc)
             return fallback
 
@@ -138,7 +138,7 @@ class ColorKitCompare:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("comparison",)
     FUNCTION = "compare"
-    CATEGORY = "ColorKit/inspect"
+    CATEGORY = "Color Grade Tools/inspect"
     DESCRIPTION = (
         "Put two versions in one frame — wipe, side by side, or an amplified "
         "difference — so a change can be judged rather than remembered."
@@ -190,6 +190,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ColorKitScopes": "ColorKit Scopes (vectorscope, waveform, histogram)",
-    "ColorKitCompare": "ColorKit Compare (before / after)",
+    "ColorKitScopes": "Color Grade · Scopes",
+    "ColorKitCompare": "Color Grade · Compare",
 }

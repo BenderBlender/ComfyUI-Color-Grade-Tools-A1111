@@ -340,7 +340,7 @@ python tests/test_package.py        # the package compiles, imports, keeps its k
 `test_package.py` exists because `__init__.py` imports each node module inside a
 try/except so one broken node cannot hide the rest — which also means a syntax
 error leaves the pack importable, just short of those nodes. It imports them
-directly, and it pins the registry keys: the display names carry the `ColorKit`
+directly, and it pins the registry keys: the display names carry the `Color Grade ·`
 prefix for searchability, but the keys a saved workflow stores never change.
 
 The integration suite drives real checkpoints inside ComfyUI and reports VRAM

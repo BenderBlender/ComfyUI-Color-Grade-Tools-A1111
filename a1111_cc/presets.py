@@ -147,7 +147,7 @@ def load_user() -> dict:
         return {clean_name(k): sanitise(v) for k, v in stored.items()
                 if clean_name(k) and isinstance(v, dict)}
     except Exception as exc:  # noqa: BLE001 - a broken file must not break the editor
-        log.warning("ColorKit: could not read %s (%s); starting with none.", path, exc)
+        log.warning("Color Grade: could not read %s (%s); starting with none.", path, exc)
         return {}
 
 

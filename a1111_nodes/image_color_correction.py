@@ -94,7 +94,7 @@ class A1111ColorCorrection:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "apply"
-    CATEGORY = "ColorKit/image"
+    CATEGORY = "Color Grade Tools/image"
     DESCRIPTION = (
         "What the Automatic1111 webui does when you tick 'colour correction' on an "
         "img2img pass, reproduced exactly.\n\n"
@@ -175,5 +175,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "A1111ColorCorrection": "ColorKit A1111 Color Correction (image)",
+    "A1111ColorCorrection": "Color Grade · A1111 Color Correction",
 }

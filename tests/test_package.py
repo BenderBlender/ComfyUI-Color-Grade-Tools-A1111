@@ -41,7 +41,7 @@ NEEDS_COMFY = {"a1111_nodes.loopback", "a1111_nodes.legacy"}
 
 # The registry key is what a saved workflow stores. Renaming one silently
 # breaks every graph that used it, so the list is pinned here: the display
-# names carry the "ColorKit" prefix for searchability, the keys never change.
+# names carry the «Color Grade ·» prefix for searchability, the keys never change.
 EXPECTED_KEYS = {
     "A1111ColorCorrection",
     "A1111LatentColorKSampler",
@@ -163,6 +163,32 @@ def test_registry_keys_are_stable():
     assert not added, (
         f"new registry keys {sorted(added)} — add them to EXPECTED_KEYS once you "
         "are sure of the spelling, because it is what workflows will store")
+
+
+def test_names_follow_the_pack():
+    """Every display name is «Color Grade · …» and every menu category sits under
+    «Color Grade Tools/» — the names the pack took with its repository
+    (ComfyUI-Color-Grade-Tools-A1111, 30.10). Read from the sources, so the two
+    modules that need ComfyUI to import are checked too."""
+    names, categories = {}, []
+    for path in _sources():
+        with open(path, "r", encoding="utf-8") as handle:
+            tree = ast.parse(handle.read(), filename=path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                targets = [getattr(t, "id", "") for t in node.targets]
+                if "NODE_DISPLAY_NAME_MAPPINGS" in targets and isinstance(node.value, ast.Dict):
+                    for k, v in zip(node.value.keys, node.value.values):
+                        names[k.value] = v.value
+                if "CATEGORY" in targets and isinstance(node.value, ast.Constant):
+                    categories.append((os.path.basename(path), node.value.value))
+    assert set(names) == EXPECTED_KEYS, sorted(set(names) ^ EXPECTED_KEYS)
+    wrong = {k: v for k, v in names.items() if not v.startswith("Color Grade · ")}
+    assert not wrong, wrong
+    assert len(set(names.values())) == len(names), "two nodes share a display name"
+    off = [c for c in categories if not c[1].startswith("Color Grade Tools/")]
+    assert categories and not off, off
+    print(f"  {len(names)} display names «Color Grade · …», {len(categories)} categories under «Color Grade Tools/»")
 
 
 def test_every_node_describes_itself():

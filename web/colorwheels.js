@@ -376,7 +376,7 @@ async function fetchPresets() {
     if (!response.ok) throw new Error(response.statusText);
     return await response.json();
   } catch (err) {
-    console.warn("[ColorKit] could not read presets:", err);
+    console.warn("[Color Grade] could not read presets:", err);
     return { builtin: {}, user: {} };
   }
 }

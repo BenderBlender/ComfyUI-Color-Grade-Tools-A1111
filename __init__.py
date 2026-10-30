@@ -38,7 +38,7 @@ try:
     from .a1111_cc import routes as _routes
     _routes.register()
 except Exception:  # noqa: BLE001 - the nodes must load even if the routes cannot
-    log.exception("ColorKit: preset routes unavailable")
+    log.exception("Color Grade: preset routes unavailable")
 
 # Served to the editor: the colour-wheel widget for the grading nodes.
 # The nodes work without it — it drives their ordinary FLOAT widgets.

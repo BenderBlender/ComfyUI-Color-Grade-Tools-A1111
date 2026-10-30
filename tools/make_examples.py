@@ -14,7 +14,7 @@ exactly as the server lists it — ComfyUI builds those names with os.path.relpa
 so on Windows they carry backslashes, and a forward slash fails validation with
 "Value not in list":
 
-    python tools/make_examples.py --out <ComfyUI>/user/default/workflows/ColorKit \\
+    python tools/make_examples.py --out <ComfyUI>/user/default/workflows/ColorGrade \\
         --checkpoint "SDXL\\protovisionXLHighFidelity3D_releaseV660Bakedvae.safetensors"
 """
 
@@ -186,7 +186,7 @@ def build_img2img(core, pack, out):
 
     ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
                  values=_checkpoint(), size=(340, 100))
-    load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
+    load = w.add(core["LoadImage"], "LoadImage", (20, 200), {"image": "example.png"}, size=(340, 320))
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
                 {"text": "a photograph, natural light, fine detail"}, (380, 120), "Positive")
     neg = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 200),
@@ -224,7 +224,7 @@ def build_guidance(core, pack, out):
     """The model patch holding colour during sampling."""
     w = Workflow()
     w.note(
-        "## Apply Latent Color Guidance\n\n"
+        "## Latent Color Guidance\n\n"
         "Instead of repairing the colours afterwards, hold them during sampling. "
         "The patch corrects the model's own prediction at every step, so the image "
         "is composed in the right palette rather than pushed into it.\n\n"
@@ -240,7 +240,7 @@ def build_guidance(core, pack, out):
 
     ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
                  values=_checkpoint(), size=(340, 100))
-    load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
+    load = w.add(core["LoadImage"], "LoadImage", (20, 200), {"image": "example.png"}, size=(340, 320))
     enc = w.add(core["VAEEncode"], "VAEEncode", (400, 560), size=(240, 60),
                 title="Reference latent")
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
@@ -278,7 +278,7 @@ def build_both(core, pack, out):
         "## Both stages together\n\n"
         "The usual production setup for an upscale or refine pass that has to keep "
         "the original palette:\n\n"
-        "1. **Apply Latent Color Guidance** holds the colour while the model works, "
+        "1. **Latent Color Guidance** holds the colour while the model works, "
         "so it never commits to the wrong palette.\n"
         "2. **A1111 Color Correction** cleans up whatever drift is left after the "
         "decode, which is cheap and exact.\n\n"
@@ -288,7 +288,7 @@ def build_both(core, pack, out):
 
     ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
                  values=_checkpoint(), size=(340, 100))
-    load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
+    load = w.add(core["LoadImage"], "LoadImage", (20, 200), {"image": "example.png"}, size=(340, 320))
     enc = w.add(core["VAEEncode"], "VAEEncode", (400, 560), size=(240, 60),
                 title="Reference latent")
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
@@ -352,7 +352,7 @@ def build_loopback(core, pack, out):
 
     ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
                  values=_checkpoint(), size=(340, 100))
-    load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
+    load = w.add(core["LoadImage"], "LoadImage", (20, 200), {"image": "example.png"}, size=(340, 320))
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
                 {"text": "a photograph, natural light, fine detail"}, (380, 120), "Positive")
     neg = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 200),
@@ -397,7 +397,7 @@ def build_grade_image(core, pack, out):
         "as one of your own.",
         (-520, 40), (460, 400))
 
-    load = w.add(core["LoadImage"], "LoadImage", (20, 40), size=(340, 320))
+    load = w.add(core["LoadImage"], "LoadImage", (20, 40), {"image": "example.png"}, size=(340, 320))
     # heights as the 1.5x frontend lays the wheels out (measured 30.10: about 396 with the numbers hidden)
     grade = w.add(pack["ImageColorGrade"], "ImageColorGrade", (400, 40), size=(640, 420))
     before = w.add(core["PreviewImage"], "PreviewImage", (1080, 40), size=(320, 300),
@@ -507,7 +507,7 @@ def build_ipadapter(core, pack, out):
         "the model's attention, which carries **subject, style and texture**. It "
         "is famously loose about the palette: the look arrives, the exact colours "
         "wander.\n\n"
-        "The ColorKit node measures the reference's **colour** and holds the "
+        "The Latent Color Guidance node measures the reference's **colour** and holds the "
         "prediction to it. Different hook, different quantity, no conflict — one "
         "patches attention, the other patches the noise prediction.\n\n"
         "Both branches run the **same seed**, so the only difference is the "
@@ -519,7 +519,7 @@ def build_ipadapter(core, pack, out):
 
     ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
                  values=_checkpoint(), size=(340, 100))
-    load = w.add(core["LoadImage"], "LoadImage", (20, 190), size=(340, 320),
+    load = w.add(core["LoadImage"], "LoadImage", (20, 190), {"image": "example.png"}, size=(340, 320),
                  title="The reference — style and colour both come from here")
     pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (20, 540),
                 {"text": "a harbour at dawn, boats, wet stone, photograph"},
@@ -548,7 +548,7 @@ def build_ipadapter(core, pack, out):
     held = w.add(core["KSampler"], "KSampler", (820, 360),
                  {"seed": seed, "steps": 28, "cfg": 6.0, "sampler_name": "dpmpp_2m",
                   "scheduler": "karras", "denoise": 1.0}, (320, 280),
-                 "IP-Adapter + ColorKit")
+                 "IP-Adapter + Color Grade")
 
     decode_a = w.add(core["VAEDecode"], "VAEDecode", (1180, 40), size=(240, 60))
     decode_b = w.add(core["VAEDecode"], "VAEDecode", (1180, 140), size=(240, 60))
@@ -597,10 +597,78 @@ def build_ipadapter(core, pack, out):
     w.link(decode_b, 0, scopes, "image")
     w.link(scopes, 0, scope_out, "images")
 
-    w.dump(os.path.join(out, "07_ipadapter_with_colorkit.json"))
+    w.dump(os.path.join(out, "07_ipadapter_with_color_grade.json"))
 
 
-# what the seven examples cannot be built without
+def build_palette(core, pack, out):
+    """Two pictures in: the model redraws the first in the second's palette."""
+    w = Workflow()
+    w.note(
+        "## A palette from any picture\n\n"
+        "Two pictures in: **yours** (top) and a **colour source** (bottom) — a film "
+        "still, a painting, a photo whose light you like. The model redraws yours in "
+        "the source's palette:\n\n"
+        "1. **Latent Color Match** moves the starting latent towards the source's "
+        "colours.\n"
+        "2. **Latent Color Guidance** holds that palette at every step while the "
+        "model draws, so light and shadow are composed in it.\n"
+        "3. **A1111 Color Correction** finishes on the decoded picture: colour from "
+        "the source, brightness from the render.\n\n"
+        "`denoise` 0.5 keeps your composition; raise it for a freer redraw. To try "
+        "another look, change only the bottom picture.",
+        (-520, 40), (460, 470))
+
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
+                 values=_checkpoint(), size=(340, 100))
+    picture = w.add(core["LoadImage"], "LoadImage", (20, 200), {"image": "example.png"},
+                    size=(340, 330), title="Your picture")
+    source = w.add(core["LoadImage"], "LoadImage", (20, 590), {"image": "example.png"},
+                   size=(340, 330), title="Colour source — any picture")
+    pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
+                {"text": "describe your picture here"}, (380, 120), "Positive")
+    neg = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 200),
+                {"text": "blurry, low quality"}, (380, 120), "Negative")
+    enc_pic = w.add(core["VAEEncode"], "VAEEncode", (400, 380), size=(240, 60),
+                    title="Your picture → latent")
+    enc_src = w.add(core["VAEEncode"], "VAEEncode", (400, 590), size=(240, 60),
+                    title="Colour source → latent")
+    guide = w.add(pack["ApplyLatentColorGuidance"], "ApplyLatentColorGuidance", (820, 40),
+                  {"strength": 0.5}, (340, 260))
+    match = w.add(pack["LatentColorMatch"], "LatentColorMatch", (820, 380),
+                  {"strength": 1.0}, (340, 200))
+    ks = w.add(core["KSampler"], "KSampler", (1200, 40),
+               {"steps": 24, "cfg": 7.0, "sampler_name": "dpmpp_2m",
+                "scheduler": "karras", "denoise": 0.5}, (320, 280))
+    dec = w.add(core["VAEDecode"], "VAEDecode", (1560, 40), size=(240, 60))
+    cc = w.add(pack["A1111ColorCorrection"], "A1111ColorCorrection", (1560, 140),
+               {"strength": 0.8, "blend_mode": "a1111"}, (330, 180))
+    save = w.add(core["SaveImage"], "SaveImage", (1930, 40), size=(400, 440),
+                 title="In the source's palette")
+
+    w.link(ckpt, 0, guide, "model")
+    w.link(ckpt, 1, pos, "clip")
+    w.link(ckpt, 1, neg, "clip")
+    w.link(picture, 0, enc_pic, "pixels")
+    w.link(source, 0, enc_src, "pixels")
+    w.link(ckpt, 2, enc_pic, "vae")
+    w.link(ckpt, 2, enc_src, "vae")
+    w.link(enc_src, 0, guide, "reference_latent")
+    w.link(enc_pic, 0, match, "samples")
+    w.link(enc_src, 0, match, "reference")
+    w.link(ckpt, 0, match, "model")
+    w.link(match, 0, ks, "latent_image")
+    w.link(guide, 0, ks, "model")
+    w.link(pos, 0, ks, "positive")
+    w.link(neg, 0, ks, "negative")
+    w.link(ks, 0, dec, "samples")
+    w.link(ckpt, 2, dec, "vae")
+    w.link(dec, 0, cc, "image")
+    w.link(source, 0, cc, "reference")
+    w.link(cc, 0, save, "images")
+    w.dump(os.path.join(out, "08_palette_from_any_picture.json"))
+
+
+# what the eight examples cannot be built without
 NEEDED = ("CheckpointLoaderSimple", "LoadImage", "KSampler", "ImageColorGrade",
           "LatentColorGrade", "ApplyLatentColorGuidance", "IPAdapterUnifiedLoader",
           "IPAdapterAdvanced")
@@ -636,7 +704,7 @@ def main():
     os.makedirs(out, exist_ok=True)
 
     for build in (build_img2img, build_guidance, build_both, build_loopback,
-                  build_grade_image, build_grade_latent, build_ipadapter):
+                  build_grade_image, build_grade_latent, build_ipadapter, build_palette):
         build(nodes, nodes, out)
 
 

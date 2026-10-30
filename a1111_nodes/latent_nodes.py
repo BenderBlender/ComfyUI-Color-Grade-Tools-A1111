@@ -94,7 +94,7 @@ class ApplyLatentColorGuidance:
     RETURN_TYPES = ("MODEL",)
     RETURN_NAMES = ("model",)
     FUNCTION = "apply"
-    CATEGORY = "ColorKit/model"
+    CATEGORY = "Color Grade Tools/model"
     DESCRIPTION = (
         "Hold a reference's colours while the image is being made, instead of "
         "correcting them afterwards.\n\n"
@@ -182,7 +182,7 @@ class LatentColorMatch:
     RETURN_TYPES = ("LATENT",)
     RETURN_NAMES = ("samples",)
     FUNCTION = "apply"
-    CATEGORY = "ColorKit/latent"
+    CATEGORY = "Color Grade Tools/latent"
     DESCRIPTION = (
         "Match one latent's colours to another, once.\n\n"
         "WHAT IT IS FOR. Put it before a sampler to start an img2img pass from the "
@@ -246,6 +246,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ApplyLatentColorGuidance": "ColorKit Latent Color Guidance (model patch)",
-    "LatentColorMatch": "ColorKit Latent Color Match (one shot)",
+    "ApplyLatentColorGuidance": "Color Grade · Latent Color Guidance",
+    "LatentColorMatch": "Color Grade · Latent Color Match",
 }

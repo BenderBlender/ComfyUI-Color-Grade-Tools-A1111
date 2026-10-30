@@ -4,7 +4,7 @@
 # [tool.comfy].PublisherId.
 
 [project]
-name = "comfyui-a1111-colorcorrection"
+name = "comfyui-color-grade-tools-a1111"
 description = "Automatic1111-style colour matching for ComfyUI: LAB histogram correction on images, and a model patch that holds a reference's colours through sampling on any model family."
 version = "1.0.0"
 license = { file = "LICENSE" }
@@ -17,6 +17,6 @@ BugTracker = "https://github.com/BenderBlender/ComfyUI-Color-Grade-Tools-A1111/i
 
 [tool.comfy]
 PublisherId = ""
-DisplayName = "A1111 Color Correction"
+DisplayName = "Color Grade Tools (A1111)"
 Icon = ""
 includes = []

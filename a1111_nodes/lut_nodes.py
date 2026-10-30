@@ -90,7 +90,7 @@ class ColorKitApplyLUT:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "apply"
-    CATEGORY = "ColorKit/image"
+    CATEGORY = "Color Grade Tools/image"
     DESCRIPTION = "Apply a .cube lookup table, with a strength to dial it back."
 
     def apply(self, image, lut_name, strength=1.0):
@@ -99,13 +99,13 @@ class ColorKitApplyLUT:
 
         path = _resolve(lut_name)
         if not path or not os.path.exists(path):
-            log.warning("ColorKit LUT: %r not found; passing the image through.", lut_name)
+            log.warning("Color Grade LUT: %r not found; passing the image through.", lut_name)
             return (image,)
 
         try:
             table, low, high = L.read_cube(path)
         except L.CubeError as exc:
-            log.warning("ColorKit LUT: %s", exc)
+            log.warning("Color Grade LUT: %s", exc)
             return (image,)
 
         planes = image.detach().float().movedim(-1, 1)[:, :3].clamp(0.0, 1.0)
@@ -139,7 +139,7 @@ class ColorKitSaveGradeAsLUT:
     RETURN_NAMES = ("image", "path")
     FUNCTION = "save"
     OUTPUT_NODE = True
-    CATEGORY = "ColorKit/image"
+    CATEGORY = "Color Grade Tools/image"
     DESCRIPTION = (
         "Bake the wheels into a .cube file. Exact, because a grade is a function "
         "of colour alone — unlike matching to a reference, which depends on the "
@@ -159,9 +159,9 @@ class ColorKitSaveGradeAsLUT:
         path = os.path.join(directory, safe)
         try:
             L.write_cube(path, table, used, title=os.path.splitext(safe)[0])
-            log.info("ColorKit: wrote %s (%d^3)", path, used)
+            log.info("Color Grade: wrote %s (%d^3)", path, used)
         except OSError as exc:
-            log.exception("ColorKit: could not write the LUT")
+            log.exception("Color Grade: could not write the LUT")
             return (image if image is not None else torch.zeros(1, 1, 1, 3), str(exc))
 
         if image is None:
@@ -175,6 +175,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ColorKitApplyLUT": "ColorKit Apply LUT (.cube)",
-    "ColorKitSaveGradeAsLUT": "ColorKit Save Grade as LUT (.cube)",
+    "ColorKitApplyLUT": "Color Grade · Apply LUT",
+    "ColorKitSaveGradeAsLUT": "Color Grade · Save Grade as LUT",
 }

@@ -53,7 +53,7 @@ class A1111LatentColorKSampler:
 
     RETURN_TYPES = ("LATENT",)
     FUNCTION = "sample"
-    CATEGORY = "ColorKit/sampling"
+    CATEGORY = "Color Grade Tools/sampling"
     DESCRIPTION = (
         "Deprecated. Replace with Apply Latent Color Guidance feeding an ordinary "
         "KSampler — the same correction, with every sampler and model family."
@@ -99,5 +99,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "A1111LatentColorKSampler": "ColorKit KSampler — old, use Guidance instead",
+    "A1111LatentColorKSampler": "Color Grade · KSampler (old)",
 }

@@ -243,7 +243,7 @@ class GradeCorrector:
     def __call__(self, x0, sigma=None):
         self._note_sigma(sigma)
         if x0.ndim not in (4, 5) or x0.shape[1] != self.space.channels:
-            self.warn_once("shape", "ColorKit Grade: skipping a %s prediction",
+            self.warn_once("shape", "Color Grade wheels: skipping a %s prediction",
                            tuple(x0.shape))
             return x0
 
@@ -275,7 +275,7 @@ class GradeCorrector:
 
         delta = self.space.backward_delta(G.from_unit(mapped) - projected)
         if delta.shape != source.shape:
-            self.warn_once("delta", "ColorKit Grade: correction came back as %s "
+            self.warn_once("delta", "Color Grade wheels: correction came back as %s "
                                     "for a %s prediction; skipping.",
                            tuple(delta.shape), tuple(source.shape))
             return x0
@@ -344,7 +344,7 @@ class LatentColorGrade:
     RETURN_TYPES = ("MODEL",)
     RETURN_NAMES = ("model",)
     FUNCTION = "apply"
-    CATEGORY = "ColorKit/model"
+    CATEGORY = "Color Grade Tools/model"
     DESCRIPTION = (
         "Lift, gamma and gain applied to the model's own prediction, so the image is "
         "composed in the graded look. Works with any sampler and any model family."
@@ -415,7 +415,7 @@ class ImageColorGrade:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "apply"
-    CATEGORY = "ColorKit/image"
+    CATEGORY = "Color Grade Tools/image"
     DESCRIPTION = (
         "Lift, gamma and gain on an image, with the usual colourist's controls. "
         "Connect a reference picture to pick up its look and adjust from there."
@@ -459,6 +459,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LatentColorGrade": "ColorKit Grade wheels — latent (model patch)",
-    "ImageColorGrade": "ColorKit Grade wheels — image",
+    "LatentColorGrade": "Color Grade · Grade Wheels (latent)",
+    "ImageColorGrade": "Color Grade · Grade Wheels (image)",
 }
