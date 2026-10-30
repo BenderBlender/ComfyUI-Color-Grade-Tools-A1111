@@ -15,7 +15,14 @@ being made* instead of repairing it afterwards.
 
 ## What it looks like
 
-Three rows from the **[showcase](docs/showcase/README.md)** — every node on pictures, with its settings and the
+Colour wheels and one-click presets right in the node graph:
+
+| Grade wheels (preset *Teal and orange*) | The whole thing, run: before → wheels → after |
+|---|---|
+| <img src="docs/showcase/frames/ui_01_wheels_teal_and_orange.jpg" width="100%"> | <img src="docs/showcase/frames/ui_04_workflow_grade_an_image.jpg" width="100%"> |
+
+More of the interface — the presets menu, every value as a slider, grading while sampling, scopes — and three rows
+of results below, from the **[showcase](docs/showcase/README.md)**: every node on pictures, with its settings and the
 measured numbers (SDXL, 30 October 2026).
 
 | img2img at denoise 0.9 | Input | No correction | A1111 Color Correction |

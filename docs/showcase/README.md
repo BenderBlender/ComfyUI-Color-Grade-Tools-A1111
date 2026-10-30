@@ -5,6 +5,40 @@ says otherwise) and measured with OpenCV LAB means: the numbers are distances be
 Click a picture for full size. The two test pictures — a mech robot (photo style) and a girl on a porch
 (illustration) — are the author's own; film frames are open-licensed, see [CREDITS](CREDITS.md).
 
+## The interface
+
+ColorKit's nodes in the ComfyUI editor (frontend 1.55), as you get them — screenshots at 1:1.
+
+**Grade wheels.** Lift, gamma and gain as three colour wheels, each with a master slider and its numbers underneath;
+saturation and contrast below. Drag a wheel, Shift for fine moves, Alt-click to reset. Here the *Teal and orange* preset:
+lift pushed to teal, gain to orange.
+
+<img src="frames/ui_01_wheels_teal_and_orange.jpg" alt="Grade wheels with the Teal and orange preset" width="100%">
+
+**Presets, one right-click away.** 15 built-in looks, plus your own: *Save these settings as a preset…* stores the current
+wheels by name, *Delete a preset* removes one. *Show the numbers* opens every value as a slider.
+
+| Right-click → Presets | Show the numbers |
+|---|---|
+| <img src="frames/ui_03_presets_menu.jpg" alt="The Presets menu next to the wheels" width="100%"> | <img src="frames/ui_02_wheels_numbers_shown.jpg" alt="The wheels with every value as a slider" width="100%"> |
+
+**A whole workflow.** Template 05: a picture in, the wheels, before and after — no model needed, it runs in a fraction of
+a second.
+
+<img src="frames/ui_04_workflow_grade_an_image.jpg" alt="Template 05, run: before and after" width="100%">
+
+**Grading while the image is made.** Template 06: the latent wheels patch the model (top), the same seed renders ungraded
+below, and the image wheels grade that render afterwards — so both ways can be compared side by side (section 6).
+
+<img src="frames/ui_08_workflow_grade_while_sampling.jpg" alt="Template 06: latent wheels and the same wheels afterwards" width="100%">
+
+**Scopes and compare** draw their own images: vectorscope, RGB parade and histogram; a wipe, side by side, difference or
+checkerboard of two pictures.
+
+| ColorKit Scopes (the robot after Teal and orange) | ColorKit Compare, wipe |
+|---|---|
+| <img src="frames/scopes_teal.jpg" alt="Scopes: vectorscope, parade, histogram" width="100%"> | <img src="frames/compare_wipe.jpg" alt="Compare: wipe" width="100%"> |
+
 ## 1. img2img drifts in colour; A1111 Color Correction puts it back
 
 The robot through img2img, prompt describing it, seed 0, dpmpp_2m / karras, 24 steps, cfg 7. Right column: the
