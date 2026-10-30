@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" font-family="Segoe UI, Helvetica Neue, Helvetica, Arial, sans-serif">
+<defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#2ec4b6"/><stop offset="1" stop-color="#ff9f1c"/></linearGradient><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8a93a3"/></marker></defs>
+<rect width="1200" height="400" rx="20" fill="#0f1218"/>
+
+<text x="40" y="52" font-size="25" font-weight="600" fill="#e8eaed">A1111 colour correction: what the webui does after an img2img</text>
+<text x="40" y="80" font-size="16" fill="#a0a7b4">The setting «Apply color correction to img2img results to match original colors», ported line for line.</text>
+<rect x="30" y="170" width="150" height="110" rx="12" fill="#181b23" stroke="#3a4150" stroke-width="1.5"/>
+<text x="105.0" y="202" text-anchor="middle" font-size="19" font-weight="600" fill="#e8eaed">Input</text>
+<text x="105.0" y="228" text-anchor="middle" font-size="15" fill="#a0a7b4">the picture you</text>
+<text x="105.0" y="249" text-anchor="middle" font-size="15" fill="#a0a7b4">start from</text>
+<line x1="180" y1="225" x2="210" y2="225" stroke="#8a93a3" stroke-width="2" marker-end="url(#a)"/>
+<rect x="212" y="170" width="150" height="110" rx="12" fill="#181b23" stroke="#3a4150" stroke-width="1.5"/>
+<text x="287.0" y="202" text-anchor="middle" font-size="19" font-weight="600" fill="#e8eaed">img2img</text>
+<text x="287.0" y="228" text-anchor="middle" font-size="15" fill="#a0a7b4">the model</text>
+<text x="287.0" y="249" text-anchor="middle" font-size="15" fill="#a0a7b4">redraws it</text>
+<line x1="362" y1="225" x2="392" y2="225" stroke="#8a93a3" stroke-width="2" marker-end="url(#a)"/>
+<rect x="394" y="170" width="120" height="110" rx="12" fill="#181b23" stroke="#3a4150" stroke-width="1.5"/>
+<text x="454.0" y="202" text-anchor="middle" font-size="19" font-weight="600" fill="#e8eaed">Decode</text>
+<text x="454.0" y="228" text-anchor="middle" font-size="15" fill="#a0a7b4">colours</text>
+<text x="454.0" y="249" text-anchor="middle" font-size="15" fill="#a0a7b4">have drifted</text>
+<line x1="514" y1="225" x2="544" y2="225" stroke="#8a93a3" stroke-width="2" marker-end="url(#a)"/>
+<rect x="546" y="170" width="250" height="110" rx="12" fill="#181b23" stroke="url(#g)" stroke-width="3"/>
+<text x="671.0" y="202" text-anchor="middle" font-size="19" font-weight="600" fill="#ffb347">Histogram match</text>
+<text x="671.0" y="228" text-anchor="middle" font-size="15" fill="#a0a7b4">L, a and b, each matched</text>
+<text x="671.0" y="249" text-anchor="middle" font-size="15" fill="#a0a7b4">to the input's distribution</text>
+<line x1="796" y1="225" x2="826" y2="225" stroke="#8a93a3" stroke-width="2" marker-end="url(#a)"/>
+<rect x="828" y="170" width="220" height="110" rx="12" fill="#181b23" stroke="url(#g)" stroke-width="3"/>
+<text x="938.0" y="202" text-anchor="middle" font-size="19" font-weight="600" fill="#ffb347">Luminosity blend</text>
+<text x="938.0" y="228" text-anchor="middle" font-size="15" fill="#a0a7b4">brightness from the render,</text>
+<text x="938.0" y="249" text-anchor="middle" font-size="15" fill="#a0a7b4">colour from the match</text>
+<line x1="1048" y1="225" x2="1068" y2="225" stroke="#8a93a3" stroke-width="2" marker-end="url(#a)"/>
+<rect x="1070" y="170" width="104" height="110" rx="12" fill="#181b23" stroke="#3a4150" stroke-width="1.5"/>
+<text x="1122.0" y="202" text-anchor="middle" font-size="19" font-weight="600" fill="#e8eaed">Result</text>
+<text x="1122.0" y="228" text-anchor="middle" font-size="15" fill="#a0a7b4">colour</text>
+<text x="1122.0" y="249" text-anchor="middle" font-size="15" fill="#a0a7b4">held</text>
+<path d="M105,170 C105,118 671,118 671,166" fill="none" stroke="#8a93a3" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#a)"/>
+<text x="388" y="110" text-anchor="middle" font-size="15" fill="#a0a7b4">the input's LAB histograms, measured once</text>
+<text x="40" y="340" font-size="16" fill="#a0a7b4">No model, no training, a fraction of a second. Bit-identical to the webui on its pinned libraries (numpy 1.26.2, OpenCV 4.8.1,</text>
+<text x="40" y="364" font-size="16" fill="#a0a7b4">scikit-image 0.21.0, blendmodes 2022): 0 of 255 difference on four img2img pairs.</text>
+</svg>

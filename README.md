@@ -1,59 +1,188 @@
-# A1111 Color Correction for ComfyUI
+<p align="center"><img src="docs/showcase/media/hero.jpg" alt="Color Grade Tools for ComfyUI" width="100%"></p>
 
-Keep a render's colours where you put them.
+<p align="center">
+<a href="docs/showcase/README.md"><b>The full tour</b></a> ·
+<a href="#install">Install</a> ·
+<a href="#nine-ready-workflows">Workflows</a> ·
+<a href="#the-nodes">Nodes</a> ·
+<a href="#measured-not-promised">Numbers</a>
+</p>
 
-Any img2img, refine or upscale pass drifts in colour. The higher the denoise,
-the further it goes: skies warm up, skin cools down, a grade you spent an hour
-on comes back looking like someone else's. The Automatic1111 webui has had a
-one-checkbox fix for this since 2022. This pack brings that fix to ComfyUI —
-and then does the thing A1111 cannot: holds the colour *while the image is
-being made* instead of repairing it afterwards.
+# Color Grade Tools for ComfyUI
 
-**No models to download. No dependencies beyond what ComfyUI already installs.**
+**Grade inside the diffusion — not on top of it.** Colour wheels that work on what the model is drawing, any picture
+as a palette, and the colour correction Automatic1111 users have relied on since 2022, ported bit for bit.
+
+No models to download, nothing to train, no dependencies beyond what ComfyUI already installs. Works under every
+sampler.
+
+<p align="center"><img src="docs/showcase/media/palettes.webp" alt="One img2img redrawn in seven film palettes" width="560"></p>
+<p align="center"><sub>One img2img, one seed, seven colour sources — template 08.</sub></p>
 
 ---
 
-## What it looks like
+## What you can do with it
 
-Colour wheels and one-click presets right in the node graph:
+### Grade while the picture is being made
 
-| Grade wheels (preset *Teal and orange*) | The whole thing, run: before → wheels → after |
-|---|---|
-| <img src="docs/showcase/frames/ui_01_wheels_teal_and_orange.jpg" width="100%"> | <img src="docs/showcase/frames/ui_04_workflow_grade_an_image.jpg" width="100%"> |
+<img src="docs/showcase/media/inside_vs_after.jpg" alt="No grade, the wheels afterwards, the wheels inside sampling" width="100%">
 
-More of the interface — the presets menu, every value as a slider, grading while sampling, scopes — and three rows
-of results below, from the **[showcase](docs/showcase/README.md)**: every node on pictures, with its settings and the
-measured numbers (SDXL, 30 October 2026).
+Every other colour tool in ComfyUI recolours the finished pixels. **Grade Wheels (latent)** gives lift, gamma and gain
+to the model itself: at every step its prediction of the finished picture is moved towards your look, so light and
+shadow are drawn in it. Same direction and size as the image wheels — within 0.9–10° of hue and ×1.06–1.14 on SDXL —
+but made by the generation. `strength` is a true dial: 0.5 gives ×0.47 of the full shift.
+
+Template **06** · [the tour, section 1](docs/showcase/README.md#1-grade-wheels-inside-sampling)
+
+### Turn any picture into a palette
+
+<img src="docs/showcase/media/palettes_grid.jpg" alt="The girl in seven film palettes" width="100%">
+
+Give it two pictures: yours, and anything whose colour you like — a film still, a painting, a photograph. **Latent
+Color Match** starts the run in that palette, **Latent Color Guidance** holds it while the model draws, **A1111 Color
+Correction** finishes it. On seven film frames the result went 0.79–0.99 of the way to the source's colour.
+
+Template **08** · [section 2](docs/showcase/README.md#2-any-picture-becomes-a-palette)
+
+### Take that palette, then make it yours
+
+<img src="docs/showcase/frames/ui_12_run_palette_plus_wheels.jpg" alt="Template 09 in the editor: two pictures in, moved circles, palette with and without the wheels" width="100%">
+
+Template **09** puts the latent wheels on top of a picture's palette — circles moved, the palette alone beside it from
+the same seed — so every adjustment is visible against what it changed.
+[Four colour sources, warm and cool circles →](docs/showcase/README.md#3-palette-plus-your-own-wheels)
+
+### Stop img2img colour drift — the A1111 way, bit for bit
 
 | img2img at denoise 0.9 | Input | No correction | A1111 Color Correction |
 |---|---|---|---|
-| bit-identical to the webui's own function | <img src="docs/showcase/frames/robot.jpg" width="100%"> | <img src="docs/showcase/frames/img2img_plain_d0.9.jpg" width="100%"> | <img src="docs/showcase/frames/S_robot_d0.9_01cc.jpg" width="100%"> |
+| 0 of 255 from the webui's own function | <img src="docs/showcase/frames/robot.jpg" width="100%"> | <img src="docs/showcase/frames/img2img_plain_d0.9.jpg" width="100%"> | <img src="docs/showcase/frames/S_robot_d0.9_01cc.jpg" width="100%"> |
 
-| A dusk street, Teal and orange | No grade | Wheels on the decoded picture | Grade wheels — latent |
-|---|---|---|---|
-| the model composes in the look; 2.8° of hue from the image grade | <img src="docs/showcase/frames/I_street_s0_none.jpg" width="100%"> | <img src="docs/showcase/frames/I_street_s0_teal_and_orange_after.jpg" width="100%"> | <img src="docs/showcase/frames/I_street_s0_teal_and_orange_while_k1.0_start0.6.jpg" width="100%"> |
+<img src="docs/showcase/media/a1111_flow.svg" alt="A1111 colour correction: histogram match in LAB, then a luminosity blend" width="100%">
 
-| Loopback, 8th pass | Input | No correction | Colour correction |
-|---|---|---|---|
-| colour drift 7.7 without, 0.7 with | <img src="docs/showcase/frames/girl.jpg" width="100%"> | <img src="docs/showcase/frames/H_girl_cc0_pass08.jpg" width="100%"> | <img src="docs/showcase/frames/H_girl_cc1_pass08.jpg" width="100%"> |
+The webui's *Apply color correction to img2img results* — histogram match in LAB, then a luminosity blend that keeps
+the render's light and puts back only the colour — reproduced against the webui's own code on its pinned libraries.
+Its **Loopback** script is here too: eight passes, colour drift 6.1–7.7 without the correction, 0.3–1.3 with it.
+
+Templates **01**, **03**, **04** · [sections 4–5](docs/showcase/README.md#4-colour-held-through-img2img)
+
+### Grade, export, inspect
+
+| Wheels and presets | The whole graph, run |
+|---|---|
+| <img src="docs/showcase/frames/ui_01_wheels_teal_and_orange.jpg" width="100%"> | <img src="docs/showcase/frames/ui_04_workflow_grade_an_image.jpg" width="100%"> |
+
+Lift / gamma / gain wheels with 15 built-in looks and your own presets one right-click away; every look as a `.cube`
+LUT for **Apply LUT**, Resolve or Premiere; **Save Grade as LUT** for your own; **Scopes** (vectorscope, waveform,
+parade, histogram) and **Compare** (wipe, difference, checkerboard) to see what changed.
 
 ---
 
-## What it does
+## How it works
+
+<img src="docs/showcase/media/latent_loop.svg" alt="The sampling loop with Color Grade inside it" width="100%">
+
+The latent nodes patch the `MODEL`. Each time the model returns its prediction of the finished picture, the patch
+measures that prediction's colour, moves it part of the way to a target — your wheels, or a reference's palette — and
+hands it back; the sampler steps on from there. Colour is read through the model's own latent-to-RGB matrix (42 of
+ComfyUI's 45 latent formats) and written back along the three directions that carry colour only, so structure and
+texture are left alone — and on SDXL and SD3 the wheels write through the decoder's measured colour axes. The whole
+story, with what it does and does not promise: [Why grade in the latent space](docs/showcase/README.md#why-grade-in-the-latent-space).
+
+---
+
+## The nodes
+
+Ten nodes under **Color Grade Tools** in the node menu — type "Color Grade" in the search. Each one, with a screenshot
+and its settings: [Every node, one by one](docs/showcase/README.md#every-node-one-by-one).
+
+| Node | What it is for | Workflows |
+|---|---|---|
+| **Color Grade · Grade Wheels (latent)** | the wheels inside sampling | 06, 09 |
+| **Color Grade · Latent Color Guidance** | a reference's palette held through sampling | 02, 03, 07, 08 |
+| **Color Grade · Latent Color Match** | one-shot match of a latent to a reference | 03, 08, 09 |
+| **Color Grade · A1111 Color Correction** | the webui's post-pass, bit for bit | 01, 03, 08 |
+| **Color Grade · A1111 Loopback** | the webui's Loopback chain, colour anchored | 04 |
+| **Color Grade · Grade Wheels (image)** | the wheels on a finished picture, exact | 05, 06 |
+| **Color Grade · Apply LUT** | any `.cube` LUT, 14 looks included | — |
+| **Color Grade · Save Grade as LUT** | your wheels as a `.cube` | — |
+| **Color Grade · Scopes** | vectorscope, waveform, parade, histogram | — |
+| **Color Grade · Compare** | wipe, side by side, difference, checkerboard | — |
+
+---
+
+## Install
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/BenderBlender/ComfyUI-Color-Grade-Tools-A1111
+```
+
+Restart ComfyUI. Nothing else to install. OpenCV is used automatically when present, because A1111 runs on it and
+that makes the LAB conversion bit-identical; without it the numpy path lands within 3/255 of the same place.
+
+## Nine ready workflows
+
+In ComfyUI: **Workflow → Browse Templates → ComfyUI-Color-Grade-Tools-A1111**, or drag a file from
+[`examples/`](examples) onto the canvas.
+
+| | Workflow | What it shows |
+|---|---|---|
+| 01 | img2img color correction | A1111's post-pass after an img2img, before and after |
+| 02 | latent color guidance | the input's colour held while the model draws |
+| 03 | guidance plus correction | both stages — the usual refine or upscale setup |
+| 04 | a1111 loopback | the Loopback chain, every pass previewed |
+| 05 | grade an image | the wheels on a picture; no model needed |
+| 06 | grade while sampling | the latent wheels against the same wheels afterwards |
+| 07 | ipadapter with color grade | IP-Adapter for the style, guidance for the palette |
+| 08 | palette from any picture | your picture in the palette of another one |
+| 09 | palette plus your wheels | that palette with your own circles on top |
+
+Start with **08** and two pictures of your own: change only the colour source and watch the picture follow it.
+
+| Setting | Start at | Why |
+|---|---|---|
+| Latent Color Guidance `strength` | 0.5–0.7 | Above that the model fights the correction instead of following it. |
+| Guidance `start_percent` / `end_percent` | 0.15 / 0.9 | The first predictions are featureless; the last steps settle detail. |
+| Grade Wheels (latent) `strength` | 1.0 | The full look; it scales in proportion. |
+| Grade Wheels (latent) `start_percent` | 0.6 | It holds what it first sees; earlier, it also fights the model's repaint (×3.4 at 0.3). |
+| `method` / `space` | `auto` | The RGB projection — the same controls on every family. |
+| A1111 Color Correction `strength` | 0.8–1.0 | 1.0 is the webui; a little less leaves the render some of its own colour. |
+
+## Measured, not promised
+
+Every figure below was measured on 30 October 2026 through a running ComfyUI; the pictures and the method are in
+[the tour](docs/showcase/README.md).
+
+| | Result |
+|---|---|
+| A1111 Color Correction against the webui's own code | **0 of 255** on four img2img pairs |
+| Grade Wheels (latent) against the same wheels afterwards, SDXL img2img | 0.9–10° of hue, ×1.06–1.14 of the size |
+| … strength 0.5 against 1.0 | ×0.47 of the shift |
+| … SD 3.5, a street from scratch | 10.9°, ×0.90 (the preview matrix gave 24.5°) |
+| A picture's palette, template 08, seven film frames | 0.79–0.99 of the way to the source's colour |
+| Loopback, eight passes, colour drift | 6.1–7.7 without the correction, **0.3–1.3** with it |
+| Latent Color Guidance, robot img2img at denoise 0.7 | LAB distance 3.11 → 1.78 at strength 0.6 |
+| Save Grade as LUT round trip | within 3 of 255, mean 0.06 |
+
+---
+
+## Under the hood
+
+The details behind the pictures: what each node computes, how it was checked, and what changed from the
+original nodes.
 
 ### The blend decides whether the cast is removed at all
 
-![Blend modes](docs/demos/01-blend-modes.jpg)
-
-`A1111 Color Correction` is the faithful port of
+**A1111 Color Correction** is the faithful port of
 `modules/processing.py: apply_color_correction`: histogram-match the result to
 the reference in LAB, then blend so the generated image **keeps its own
 brightness and takes only the reference's colour**.
 
 That last clause is the whole operation, and it is easy to get backwards. The
-third and fourth panels above are the *same* histogram match, blended the two
-possible ways — 2.6 against 3.4 in distance from the reference. One removes
-the cast, the other keeps most of it.
+same histogram match, blended the two possible ways, lands 2.6 against 3.4 in
+distance from the reference on an SDXL img2img: one removes the cast, the other
+keeps most of it.
 
 This matters here because the first version of these nodes had it backwards by
 default. Over random image pairs the two blends differ by an average of
@@ -62,13 +191,13 @@ honestly labelled.
 
 ### The whole strength range is useful
 
-![Strength](docs/demos/02-image-strength.jpg)
+Distance from the reference on the same img2img falls steadily with `strength` —
+5.6 / 4.6 / 3.5 / 2.6 at 0 / 0.35 / 0.7 / 1.0 — so values between are a real
+choice, not a compromise.
 
 ### The colour is held during sampling, not patched afterwards
 
-![Latent colour guidance](docs/demos/03-latent-guidance.jpg)
-
-`Apply Latent Color Guidance` patches the `MODEL`. At every step the model
+**Latent Color Guidance** patches the `MODEL`. At every step the model
 predicts what it thinks the finished image looks like; the patch nudges that
 prediction towards your reference's palette and hands it back. The model then
 keeps working *in* the corrected palette rather than being dragged into it at
@@ -133,8 +262,6 @@ model alone rather than pretending.
 
 ### Three transfer methods, for three different problems
 
-![Methods](docs/demos/04-methods.jpg)
-
 - **`mean_only`** shifts each channel's average. It cannot change contrast or
   detail, so it is the safe default on many-channel latents.
 - **`reinhard`** matches average *and* spread — the classic transfer. Use it
@@ -146,8 +273,6 @@ model alone rather than pretending.
 On SDXL at strength 0.6 the three land close together on the average (3.23 /
 3.28 / 3.20) and separate on the spread, where MKL is clearly ahead: 0.91
 against 1.12 for `mean_only` and 1.55 for `reinhard`.
-
-![Working space](docs/demos/05-working-space.jpg)
 
 One honest note on `space`. On a four-channel SD or SDXL latent the channels
 really do behave like colour axes, so matching them raw is competitive — it
@@ -182,31 +307,21 @@ histogram, so deliberate changes in lighting survive.
 
 ---
 
-## The nodes
-
-| Node | Takes | Gives | For |
-|---|---|---|---|
-| **Apply Latent Color Guidance** | `MODEL`, `LATENT` | `MODEL` | Holding a palette through sampling. The main one. |
-| **A1111 Color Correction** | `IMAGE`, `IMAGE` | `IMAGE` | The faithful A1111 post-pass on a decoded image. |
-| **A1111 Loopback** | `MODEL`, `VAE`, `IMAGE` | `IMAGE` | A chain of img2img passes anchored to one reference. |
-| **Latent Color Match** | `LATENT`, `LATENT` | `LATENT` | One-shot match, before or after sampling. |
-| **KSampler (A1111 Latent Color Match)** | — | — | Deprecated. Kept so old workflows still open. |
-
-Where each one is exact, and where it is not:
+### Exact and approximate
 
 | | Exact | Approximate |
 |---|---|---|
 | **A1111 Color Correction** | always — bit-identical to the webui's own function on its pinned libraries (numpy 1.26.2, OpenCV 4.8.1, scikit-image 0.21.0, blendmodes 2022): 0 of 255 on four img2img pairs | — |
-| **Grade wheels — image** | always | — |
+| **Grade Wheels (image)** | always | — |
 | **Apply LUT** | the table, as written | — |
 | **Loopback** | the correction between passes | — |
-| **Latent Color Match**, **Guidance**, **Grade — latent** | the direction of the change | the exact hue and strength, because the latent-to-RGB matrix is a linear fit to a decoder that is not |
+| **Latent Color Match**, **Latent Color Guidance**, **Grade Wheels (latent)** | the direction of the change | the exact hue and strength, because the latent-to-RGB matrix is a linear fit to a decoder that is not |
 
 The latent nodes earn their place by changing what the model draws rather
 than what comes out of it. When the precise number matters, finish on an
 image node.
 
-**Grade — latent on SDXL** writes its colour through the decoder's *measured*
+**Grade Wheels (latent) on SDXL** writes its colour through the decoder's *measured*
 axes (`a1111_cc/axes.py`, made with `tools/calibrate_axes.py`), not through the
 preview matrix: inverted, the preview fit turned warm highlights magenta at
 three to six times the asked strength. It holds the levels of the first
@@ -227,47 +342,7 @@ otherwise drag the statistics towards doing nothing.
 
 ---
 
-## Install
-
-**ComfyUI Manager** — search for "A1111 Color Correction".
-
-**Manually:**
-
-```bash
-cd ComfyUI/custom_nodes
-git clone https://github.com/BenderBlender/ComfyUI-Color-Grade-Tools-A1111
-```
-
-Nothing to install afterwards. OpenCV is used automatically when present,
-because A1111 runs on it and that makes the LAB conversion bit-identical;
-without it the numpy path lands within 3/255 of the same place.
-
----
-
-## Quick start
-
-Three workflows are in [`examples/`](examples) — drag any into ComfyUI:
-
-1. **`01_img2img_color_correction.json`** — the post-pass, with a before/after
-   preview so you can see what it did.
-2. **`02_latent_color_guidance.json`** — the model patch. Bypass it with
-   Ctrl+B to compare.
-3. **`03_guidance_plus_correction.json`** — both stages, the usual production
-   setup for an upscale or refine pass.
-4. **`04_a1111_loopback.json`** — the Loopback chain, with every pass
-   previewed so you can watch the content change while the palette does not.
-
-| Setting | Start at | Why |
-|---|---|---|
-| `strength` | 0.5–0.7 | Above that the model fights the correction instead of following it. |
-| `start_percent` | 0.15 | Before that the prediction is still featureless and its spread means nothing. |
-| `end_percent` | 0.9 | Leaving the last steps alone lets detail settle undisturbed. |
-| `method` | `auto` | `reinhard` for 4-channel latents, `mean_only` where channels are not colour axes. |
-| `space` | `auto` | The RGB projection — the same controls on every family, approximate in the exact hue. |
-
----
-
-## Measured results
+## More measurements
 
 "Distance" is the mean absolute difference between a result's LAB channel
 statistics and the reference's, in 0–255 levels: lower is closer to the
@@ -327,14 +402,15 @@ own step count.
 
 ### Tests
 
-68 unit tests, needing only numpy and torch:
+123 unit tests, needing only numpy and torch:
 
 ```bash
-python tests/test_color.py          # image maths, incl. A1111 parity   (14)
-python tests/test_latent_core.py    # statistics, transfers, projection (30)
-python tests/test_loopback.py       # the chain, with sampler and VAE stubbed (24)
-python tests/test_examples.py       # the example workflows stay loadable (--server HOST:PORT also checks node types)
-python tests/test_package.py        # the package compiles, imports, keeps its keys (5)
+python tests/test_grading.py        # the wheels, presets, LUTs, the latent grade      (46)
+python tests/test_color.py          # image maths, incl. A1111 parity                   (15)
+python tests/test_latent_core.py    # statistics, transfers, projection                 (31)
+python tests/test_loopback.py       # the chain, with sampler and VAE stubbed           (24)
+python tests/test_package.py        # compiles, imports, keeps its keys and names       (7)
+python tests/test_examples.py       # the nine workflows load (--server HOST:PORT also checks node types)
 ```
 
 `test_package.py` exists because `__init__.py` imports each node module inside a
@@ -402,7 +478,7 @@ have blocked ComfyUI-Manager installs entirely.
 
 ### Migrating
 
-`KSampler (A1111 Latent Color Match)` still loads and still samples. It is
+`KSampler (A1111 Latent Color Match)`, now shown as **Color Grade · KSampler (old)**, still loads and still samples. It is
 marked deprecated and hidden from the menu, with the same inputs in the same
 order, so saved graphs open unchanged. **Its strength now means something
 different**: it corrects a correctly-scaled reference, so start around 0.3–0.5
@@ -427,5 +503,7 @@ to come from the same VAE. Per-family constraints are in
 The image pipeline reproduces `apply_color_correction` from
 [AUTOMATIC1111/stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui),
 including a numpy port of the `blendmodes` luminosity blend it relies on.
+
+Film frames in the tour are open-licensed — see [the tour's credits](docs/showcase/CREDITS.md).
 
 MIT licensed — see [LICENSE](LICENSE).

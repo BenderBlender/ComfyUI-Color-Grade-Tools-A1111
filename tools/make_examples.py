@@ -668,7 +668,88 @@ def build_palette(core, pack, out):
     w.dump(os.path.join(out, "08_palette_from_any_picture.json"))
 
 
-# what the eight examples cannot be built without
+# the circles template 09 ships with: shadows a little towards teal, highlights towards warm, a touch more
+# saturation and contrast — moved, so the first run already shows what they do
+WARM_SHIFT = {"lift_r": -0.03, "lift_b": 0.06, "gain_r": 0.09, "gain_g": 0.03, "gain_b": -0.08,
+              "saturation": 1.15, "contrast": 1.05}
+
+
+def build_palette_wheels(core, pack, out):
+    """A picture's palette from Latent Color Match, the latent wheels on top, the palette alone beside it."""
+    w = Workflow()
+    w.note(
+        "## A picture's palette + your own wheels\n\n"
+        "Two pictures in, as in template 08: **yours** (top) and a **colour source** "
+        "(bottom). **Latent Color Match** starts the run in the source's palette; "
+        "**Grade Wheels (latent)** takes its bearings from the model's first "
+        "prediction — already in that palette — holds it while the model draws, and "
+        "adds your adjustment on top. The circles here push the shadows towards teal "
+        "and the highlights towards warm.\n\n"
+        "The lower sampler renders the same seed with the palette alone, so the two "
+        "outputs show what the wheels add. Move a circle and run again: drag, Shift "
+        "for fine moves, Alt-click to reset, right-click for presets.\n\n"
+        "`denoise` 0.5 keeps your composition. Leave Latent Color Guidance and A1111 "
+        "Color Correction out of this chain: both pull back towards the source and "
+        "would take your adjustment with them.",
+        (-520, 40), (460, 520))
+
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40),
+                 values=_checkpoint(), size=(340, 100))
+    picture = w.add(core["LoadImage"], "LoadImage", (20, 200), {"image": "example.png"},
+                    size=(340, 330), title="Your picture")
+    source = w.add(core["LoadImage"], "LoadImage", (20, 590), {"image": "example.png"},
+                   size=(340, 330), title="Colour source — any picture")
+    pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
+                {"text": "describe your picture here"}, (380, 120), "Positive")
+    neg = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 200),
+                {"text": "blurry, low quality"}, (380, 120), "Negative")
+    enc_pic = w.add(core["VAEEncode"], "VAEEncode", (400, 380), size=(240, 60),
+                    title="Your picture → latent")
+    enc_src = w.add(core["VAEEncode"], "VAEEncode", (400, 590), size=(240, 60),
+                    title="Colour source → latent")
+    match = w.add(pack["LatentColorMatch"], "LatentColorMatch", (400, 700),
+                  {"strength": 1.0}, (340, 200))
+    grade = w.add(pack["LatentColorGrade"], "LatentColorGrade", (820, 40), WARM_SHIFT,
+                  size=(640, 470), title="Your wheels, inside sampling")
+    sampler = {"steps": 24, "cfg": 7.0, "sampler_name": "dpmpp_2m", "scheduler": "karras",
+               "denoise": 0.5}
+    ks = w.add(core["KSampler"], "KSampler", (820, 570), sampler, (320, 280),
+               "With your wheels")
+    ks_plain = w.add(core["KSampler"], "KSampler", (820, 900), sampler, (320, 280),
+                     "Palette only, same seed")
+    dec = w.add(core["VAEDecode"], "VAEDecode", (1180, 570), size=(240, 60))
+    dec_plain = w.add(core["VAEDecode"], "VAEDecode", (1180, 900), size=(240, 60))
+    save = w.add(core["SaveImage"], "SaveImage", (1500, 40), size=(420, 460),
+                 title="Palette + your wheels")
+    plain_out = w.add(core["PreviewImage"], "PreviewImage", (1500, 560), size=(420, 460),
+                      title="Palette only")
+
+    w.link(ckpt, 1, pos, "clip")
+    w.link(ckpt, 1, neg, "clip")
+    w.link(picture, 0, enc_pic, "pixels")
+    w.link(source, 0, enc_src, "pixels")
+    w.link(ckpt, 2, enc_pic, "vae")
+    w.link(ckpt, 2, enc_src, "vae")
+    w.link(enc_pic, 0, match, "samples")
+    w.link(enc_src, 0, match, "reference")
+    w.link(ckpt, 0, match, "model")
+    w.link(ckpt, 0, grade, "model")
+    for k in (ks, ks_plain):
+        w.link(match, 0, k, "latent_image")
+        w.link(pos, 0, k, "positive")
+        w.link(neg, 0, k, "negative")
+    w.link(grade, 0, ks, "model")
+    w.link(ckpt, 0, ks_plain, "model")
+    w.link(ks, 0, dec, "samples")
+    w.link(ks_plain, 0, dec_plain, "samples")
+    w.link(ckpt, 2, dec, "vae")
+    w.link(ckpt, 2, dec_plain, "vae")
+    w.link(dec, 0, save, "images")
+    w.link(dec_plain, 0, plain_out, "images")
+    w.dump(os.path.join(out, "09_palette_plus_your_wheels.json"))
+
+
+# what the nine examples cannot be built without
 NEEDED = ("CheckpointLoaderSimple", "LoadImage", "KSampler", "ImageColorGrade",
           "LatentColorGrade", "ApplyLatentColorGuidance", "IPAdapterUnifiedLoader",
           "IPAdapterAdvanced")
@@ -704,7 +785,8 @@ def main():
     os.makedirs(out, exist_ok=True)
 
     for build in (build_img2img, build_guidance, build_both, build_loopback,
-                  build_grade_image, build_grade_latent, build_ipadapter, build_palette):
+                  build_grade_image, build_grade_latent, build_ipadapter, build_palette,
+                  build_palette_wheels):
         build(nodes, nodes, out)
 
 

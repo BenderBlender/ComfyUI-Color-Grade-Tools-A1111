@@ -56,9 +56,9 @@ def main():
         grade = grading._grade_from(values)
         table, used = lut.grade_to_cube(grade, args.size)
 
-        filename = "ColorKit - " + name + ".cube"
+        filename = "Color Grade - " + name + ".cube"
         path = os.path.join(out, filename)
-        lut.write_cube(path, table, used, title=f"ColorKit {name}")
+        lut.write_cube(path, table, used, title=f"Color Grade {name}")
         written += 1
         print(f"  {filename:34s} {used}^3  {os.path.getsize(path) / 1024:5.0f} KB")
 
