@@ -397,6 +397,22 @@ async function deletePreset(name) {
   await fetch(`/colorkit/presets?name=${encodeURIComponent(name)}`, { method: "DELETE" });
 }
 
+// Where a submenu opens. Our submenus are built after an await (the preset list comes from the
+// server), and by then the frontend has closed the node menu: placed against parentMenu.root, a
+// detached element measures 0 x 0, so the submenu landed at left: 0 against the window edge
+// (30.10). So the place is read synchronously, before the await, from the entry that was clicked,
+// and given as left/top; neither the event nor the soon-closed parent menu is passed on.
+function submenuPlacement(label, event) {
+  const entry = [...document.querySelectorAll(".litecontextmenu .litemenu-entry")]
+    .find((e) => e.textContent.trim() === label);
+  const box = entry?.getBoundingClientRect();
+  if (box && box.width > 0) return { left: box.right, top: box.top };
+  if (Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+    return { left: event.clientX + 10, top: event.clientY - 10 };
+  }
+  return {};
+}
+
 function presetMenu(node, entries, onPick) {
   const names = Object.keys(entries);
   if (!names.length) return [{ content: "(none yet)", disabled: true }];
@@ -460,7 +476,8 @@ app.registerExtension({
         {
           content: "Presets",
           has_submenu: true,
-          callback: async (value, opts, event, parentMenu) => {
+          callback: async (value, opts, event) => {
+            const place = submenuPlacement("Presets", event);   // before the await: the menu is still open
             const { builtin, user } = await fetchPresets();
             const entries = { ...builtin, ...user };
             // `extra: node` as the frontend's own node menus pass it: without it the
@@ -468,7 +485,7 @@ app.registerExtension({
             // options — an uncaught TypeError on every submenu (30.10).
             new LiteGraph.ContextMenu(
               presetMenu(node, entries, (name, values) => applyPreset(node, values)),
-              { event, parentMenu, title: "Apply a preset", extra: node },
+              { ...place, title: "Apply a preset", extra: node },
             );
           },
         },
@@ -488,11 +505,12 @@ app.registerExtension({
         {
           content: "Delete a preset",
           has_submenu: true,
-          callback: async (value, opts, event, parentMenu) => {
+          callback: async (value, opts, event) => {
+            const place = submenuPlacement("Delete a preset", event);   // before the await, as above
             const { user } = await fetchPresets();
             new LiteGraph.ContextMenu(
               presetMenu(node, user, async (name) => { await deletePreset(name); }),
-              { event, parentMenu, title: "Delete which?", extra: node },
+              { ...place, title: "Delete which?", extra: node },
             );
           },
         },

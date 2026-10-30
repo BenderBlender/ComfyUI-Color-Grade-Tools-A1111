@@ -398,10 +398,11 @@ def build_grade_image(core, pack, out):
         (-520, 40), (460, 400))
 
     load = w.add(core["LoadImage"], "LoadImage", (20, 40), size=(340, 320))
-    grade = w.add(pack["ImageColorGrade"], "ImageColorGrade", (400, 40), size=(640, 300))
+    # heights as the 1.5x frontend lays the wheels out (measured 30.10: about 396 with the numbers hidden)
+    grade = w.add(pack["ImageColorGrade"], "ImageColorGrade", (400, 40), size=(640, 420))
     before = w.add(core["PreviewImage"], "PreviewImage", (1080, 40), size=(320, 300),
                    title="Before")
-    after = w.add(core["SaveImage"], "SaveImage", (1080, 360), size=(380, 400),
+    after = w.add(core["SaveImage"], "SaveImage", (1080, 420), size=(380, 400),
                   title="After")
 
     w.link(load, 0, grade, "image")
@@ -439,25 +440,27 @@ def build_grade_latent(core, pack, out):
     neg = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (20, 500),
                 {"text": "blurry, low quality"}, (340, 110), "Negative")
 
-    grade = w.add(pack["LatentColorGrade"], "LatentColorGrade", (400, 40), size=(640, 320))
-    ks = w.add(core["KSampler"], "KSampler", (400, 400),
+    # the latent wheels are taller than the image wheels (strength and the window on top); the samplers sit
+    # below them and the decoders right of the samplers, clear of the post-pass grade node (30.10: overlapping)
+    grade = w.add(pack["LatentColorGrade"], "LatentColorGrade", (400, 40), size=(640, 470))
+    ks = w.add(core["KSampler"], "KSampler", (400, 570),
                {"steps": 26, "cfg": 6.5, "sampler_name": "dpmpp_2m",
                 "scheduler": "karras", "denoise": 1.0}, (320, 280))
-    dec = w.add(core["VAEDecode"], "VAEDecode", (1080, 400), size=(240, 60))
-    save = w.add(core["SaveImage"], "SaveImage", (1080, 490), size=(380, 380),
+    dec = w.add(core["VAEDecode"], "VAEDecode", (760, 570), size=(240, 60))
+    save = w.add(core["SaveImage"], "SaveImage", (1080, 570), size=(380, 380),
                  title="Graded while sampling")
 
     # The post-pass needs a render that was NOT graded while sampling. It used to
     # take the graded decode, so with any real grade it showed the wheels applied
     # twice — invisible only while every wheel sat at its neutral default.
-    ks_plain = w.add(core["KSampler"], "KSampler", (400, 720),
+    ks_plain = w.add(core["KSampler"], "KSampler", (400, 900),
                      {"steps": 26, "cfg": 6.5, "sampler_name": "dpmpp_2m",
                       "scheduler": "karras", "denoise": 1.0}, (320, 280),
                      "Same seed, ungraded model")
-    dec_plain = w.add(core["VAEDecode"], "VAEDecode", (760, 720), size=(240, 60))
-    plain_out = w.add(core["PreviewImage"], "PreviewImage", (760, 810), size=(300, 300),
+    dec_plain = w.add(core["VAEDecode"], "VAEDecode", (760, 900), size=(240, 60))
+    plain_out = w.add(core["PreviewImage"], "PreviewImage", (760, 1000), size=(300, 300),
                       title="No grade")
-    post = w.add(pack["ImageColorGrade"], "ImageColorGrade", (1080, 40), size=(640, 300),
+    post = w.add(pack["ImageColorGrade"], "ImageColorGrade", (1080, 40), size=(640, 420),
                  title="The same wheels, applied afterwards")
     post_out = w.add(core["PreviewImage"], "PreviewImage", (1760, 40), size=(320, 300),
                      title="Graded afterwards")
