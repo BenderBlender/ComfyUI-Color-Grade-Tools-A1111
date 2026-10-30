@@ -122,9 +122,24 @@ class GradeCorrector:
     a hold with neutral wheels took 17-30 % of the colour out of the finished
     picture. After a 4-pixel blur the same chroma is 1.02 / 0.98 of the
     finished picture's and the hold takes out 2 %; the levels' spread agrees
-    within 5 %. The map built from blurred levels is applied to the full
-    picture; for lift, gain and contrast it is the same map, and the colour
-    factor is the same ratio.
+    within 5 %.
+
+    The map is applied to that blurred projection too, and the fine part is
+    carried over untouched. The projection of a single latent pixel is not the
+    colour of that pixel: much of its fine structure is the latent's texture
+    code (blurred, the projection's chroma is 0.8 to 1.7 times the decoded
+    picture's, depending on the picture), and the measured axes describe how the
+    decoder answers a smooth change, not a pixel-by-pixel one. A map applied to
+    every pixel rescales that code by its slope, per channel, and with an anchor
+    the slopes are far from 1 — 0.3 below the midtones and 1.5 above on a dark
+    warm frame. Run on the girl's latent alone, 23 calls with no model in
+    between, that painted the whole picture in neon blotches (fine-detail energy
+    x1.95); the model healed most of it during sampling, but a neon dress and
+    x1.2-1.6 detail were left. Moving only the blurred picture leaves the
+    texture to the model: x0.85-1.32 on the same bench, and 0.55-0.7 times as
+    far as the per-pixel map from the same map applied to the decoded picture
+    (DEMO_RESULTS/tools/anchor_bench2.py, 31.10). An edge-preserving base
+    (guided filter) kept the texture code as well, and the neon with it.
 
     When the space carries the decoder's tonal response (measured axes), the
     level targets are divided by it: a latent colour change at a shadow value
@@ -208,6 +223,12 @@ class GradeCorrector:
         gently instead — 0.82, 0.67 and 0.33 of the grade for the same three
         cases — because every call pulls towards the same place rather than
         concluding the work is already done.
+
+        An anchor gives its colourfulness as well as its levels. Levels matched
+        channel by channel move each channel's spread, not how far a pixel sits
+        from its own grey, so a near-monochrome frame (Elephants Dream, bleach
+        bypass) left the girl as colourful as before: 0.064 against the frame's
+        0.017, even with the levels landing exactly.
         """
         if self._targets is None:
             if self._anchor is not None:
@@ -216,7 +237,7 @@ class GradeCorrector:
                 base = unit
             base = self._smooth(base)
             levels = G.channel_levels(base)
-            if self.grade.saturation == 1.0:
+            if self.grade.saturation == 1.0 and self._anchor is None:
                 # per-channel curves commute with percentiles: grade three numbers
                 graded = self._graded(levels)
             else:
@@ -224,7 +245,8 @@ class GradeCorrector:
                 # targets off that one picture. Taking the levels from an unsaturated
                 # base and the colour from a saturated one gave two targets that
                 # disagreed — the curve pulled the channels together, the colour
-                # pushed them apart, and the correction never settled.
+                # pushed them apart, and the correction never settled. An anchor
+                # comes this way for its colour target even with saturation at 1.
                 picture = G.apply_grade(base, self.grade)
                 graded = G.channel_levels(picture)
                 chroma = G.chroma_level(base)
@@ -250,28 +272,32 @@ class GradeCorrector:
         source = x0.float()
         projected = self.space.forward(source)
         unit = G.to_unit(projected)
+        coarse = self._smooth(unit)
 
         targets, current = self._target_levels(unit)
         if current is None:
-            current = G.channel_levels(self._smooth(unit))
+            current = G.channel_levels(coarse)
         if targets.shape[0] == 1 and current.shape[0] > 1:
             targets = targets.expand(current.shape[0], -1, -1)
 
         step = (targets - current) * self.RATE
-        mapped = G.piecewise_map(unit, current, current + step)
+        # the blurred picture is moved and the fine part carried over (see the class docstring)
+        mapped = unit + G.piecewise_map(coarse, current, current + step) - coarse
 
-        if self.grade.saturation != 1.0:
+        if self._target_chroma is not None:
             # Saturation used to be applied here as a factor on every call, and it
             # was the one control that compounded: on SDXL, 26 steps from 30% of the
             # schedule, 1.15 raised the finished image's colour 3.2-fold. It now
-            # pulls towards a held target, like the levels above.
-            current = G.chroma_level(self._smooth(mapped))
+            # pulls towards a held target, like the levels above — and, like them,
+            # only on the blurred picture.
+            coarse = self._smooth(mapped)
+            current = G.chroma_level(coarse)
             target = self._target_chroma.to(current.device, current.dtype)
             if target.shape[0] == 1 and current.shape[0] > 1:
                 target = target.expand(current.shape[0])
             wanted = current + (target - current) * self.RATE
             factor = (wanted / current.clamp_min(1e-6)).clamp(0.0, 2.0)
-            mapped = G.scale_chroma(mapped, factor)
+            mapped = mapped + G.scale_chroma(coarse, factor) - coarse
 
         delta = self.space.backward_delta(G.from_unit(mapped) - projected)
         if delta.shape != source.shape:
@@ -331,9 +357,10 @@ class LatentColorGrade:
             "optional": {
                 "anchor": ("LATENT", {
                     "tooltip": "Optional. With a latent here the grade aims at its "
-                               "levels instead of the model's own — the img2img source "
-                               "is the natural choice. Without it the correction works "
-                               "out its own target as it goes.",
+                               "levels and its colourfulness instead of the model's "
+                               "own — the img2img source is the natural choice, or any "
+                               "picture whose palette you want. Without it the "
+                               "correction works out its own target as it goes.",
                 }),
             },
             # Each node gets its own hook, so two grades in a chain stack

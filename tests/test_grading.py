@@ -271,6 +271,19 @@ def _space(channels=4):
     return S.LatentColorSpace.rgb(torch.randn(channels, 3) * 0.3, channels=channels)
 
 
+def _blurred(rgb, k=5):
+    """A 5-px box blur, written out here rather than borrowed from the code under test."""
+    return torch.nn.functional.avg_pool2d(rgb, k, stride=1, padding=k // 2, count_include_pad=False)
+
+
+def _picture_like(seed, size=48):
+    """A latent with a coarse picture in it and fine texture on top, not white noise."""
+    torch.manual_seed(seed)
+    coarse = torch.nn.functional.interpolate(torch.randn(1, 4, 6, 6), size=(size, size), mode="bilinear",
+                                             align_corners=False)
+    return coarse, torch.randn(1, 4, size, size) * 0.6
+
+
 def test_levels_land_on_the_reference():
     """With an anchor the image takes that picture's shadows and highlights."""
     source = torch.rand(1, 3, 48, 48) * 0.4 + 0.1
@@ -430,14 +443,18 @@ def test_saturation_converges_instead_of_compounding():
     applied afterwards raises it 1.4-fold. A model that keeps everything it is
     given is the worst case: here the colour must settle near 1.15 times the
     first prediction's, and each call must ask for less than the one before.
+
+    The colour is measured on the 5-px blurred projection, the picture the hook
+    moves: the fine part of a latent is its texture code and is left to the
+    model, and this latent is white noise, nearly all fine part.
     """
     N = _node_module()
     space = _space()
     corrector = N.GradeCorrector(space, G.Grade(saturation=1.15), 1.0)
 
     def colour(latent):
-        # measured here, independently of the code under test: mean |rgb - grey|
-        rgb = G.to_unit(space.forward(latent))
+        # measured here, independently of the code under test: mean |rgb - grey| of the blurred projection
+        rgb = _blurred(G.to_unit(space.forward(latent)))
         grey = (rgb * torch.tensor([0.2126, 0.7152, 0.0722]).view(1, 3, 1, 1)).sum(1, keepdim=True)
         return float((rgb - grey).abs().mean())
 
@@ -544,6 +561,69 @@ def test_anchor_and_wheels_together():
     a = space.forward(plain(x, 5.0))
     b = space.forward(warmed(x, 5.0))
     assert float(b[:, 0].mean()) > float(a[:, 0].mean()), "the wheel should sit on top"
+
+
+def test_an_anchor_leaves_the_fine_texture_alone():
+    """Another picture's levels ask for slopes far from 1 (0.3 and 1.5 on a dark
+    warm frame), and a map applied to every latent pixel rescaled the latent's
+    texture code by them: alone on the girl's latent the anchor painted neon
+    blotches all over (detail x1.95), and after sampling a neon dress was left.
+    Only the blurred picture may move; what the correction adds to the fine
+    part must be small next to the fine part itself (here: 0.54 of it with the
+    per-pixel map, 0.12 with the blurred one — what a 5-px box leaves behind)."""
+    N = _node_module()
+    space = _space()
+    coarse, detail = _picture_like(11)
+    anchor_coarse, _ = _picture_like(12)
+    anchor = space.forward(anchor_coarse * 0.35 + 0.4)     # a flatter, brighter picture: slopes well below 1
+
+    def fine(t):
+        return t - _blurred(t)
+
+    x = coarse + detail
+    start = x.clone()
+    corrector = N.GradeCorrector(space, G.Grade(), 1.0, anchor)
+    for i in range(23):
+        x = corrector(x, 1.0 - i * 0.04)
+    moved_coarse = float(_blurred(x - start).abs().mean())
+    moved_fine = float(fine(x - start).abs().mean())
+    texture = float(fine(start).abs().mean())
+    assert moved_coarse > 0.05, f"the anchor should move the picture ({moved_coarse:.3f})"
+    assert moved_fine < 0.25 * texture, f"fine part changed by {moved_fine:.3f} against {texture:.3f} of texture"
+    print(f"  coarse moved {moved_coarse:.3f}; fine part changed {moved_fine:.4f} against {texture:.3f} of texture")
+
+
+def test_an_anchor_brings_its_colourfulness():
+    """Levels matched channel by channel cannot take colour out: a frame that is
+    nearly grey (Elephants Dream, bleach bypass) left the girl at 0.064 of
+    chroma against the frame's 0.017 with every level landing. The anchor's
+    colourfulness is a target too."""
+    N = _node_module()
+    space = _space()
+    coarse, detail = _picture_like(21)
+    anchor_coarse, _ = _picture_like(22)
+    rgb = G.to_unit(space.forward(anchor_coarse))      # the anchor's own colours, then mostly taken out
+    luma = (rgb * torch.tensor([0.2126, 0.7152, 0.0722]).view(1, 3, 1, 1)).sum(1, keepdim=True)
+    anchor = G.from_unit(luma + (rgb - luma) * 0.15)
+
+    def colour_of_projection(projected):
+        rgb = _blurred(G.to_unit(projected))
+        luma = (rgb * torch.tensor([0.2126, 0.7152, 0.0722]).view(1, 3, 1, 1)).sum(1, keepdim=True)
+        return float((rgb - luma).abs().mean())
+
+    def colour(latent):
+        return colour_of_projection(space.forward(latent))
+
+    x = coarse + detail
+    before = colour(x)
+    wanted = colour_of_projection(anchor)
+    corrector = N.GradeCorrector(space, G.Grade(), 1.0, anchor)
+    for i in range(23):
+        x = corrector(x, 1.0 - i * 0.04)
+    after = colour(x)
+    assert wanted < 0.5 * before, (before, wanted)
+    assert abs(after - wanted) < 0.25 * (before - wanted), f"colour {before:.3f} -> {after:.3f}, anchor {wanted:.3f}"
+    print(f"  colour {before:.3f} -> {after:.3f}; the anchor's {wanted:.3f}")
 
 
 def test_the_grade_survives_a_model_that_pushes_back():
@@ -713,7 +793,8 @@ def test_strength_is_how_much_of_the_grade():
         return float((got - levels).abs().mean() / (wanted - levels).abs().mean())
 
     def colour(latent):
-        rgb = G.to_unit(space.forward(latent))
+        # on the blurred projection, as in test_saturation_converges_instead_of_compounding
+        rgb = _blurred(G.to_unit(space.forward(latent)))
         grey = (rgb * torch.tensor([0.2126, 0.7152, 0.0722]).view(1, 3, 1, 1)).sum(1, keepdim=True)
         return float((rgb - grey).abs().mean())
 
