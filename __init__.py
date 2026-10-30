@@ -16,6 +16,7 @@ _MODULES = [
     "a1111_nodes.image_color_correction",
     "a1111_nodes.latent_nodes",
     "a1111_nodes.loopback",
+    "a1111_nodes.grading",
     "a1111_nodes.legacy",
 ]
 
@@ -31,4 +32,8 @@ for _name in _MODULES:
     NODE_CLASS_MAPPINGS.update(getattr(_mod, "NODE_CLASS_MAPPINGS", {}))
     NODE_DISPLAY_NAME_MAPPINGS.update(getattr(_mod, "NODE_DISPLAY_NAME_MAPPINGS", {}))
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+# Served to the editor: the colour-wheel widget for the grading nodes.
+# The nodes work without it — it drives their ordinary FLOAT widgets.
+WEB_DIRECTORY = "./web"
+
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]

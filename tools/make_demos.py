@@ -51,7 +51,17 @@ def memory_report(tag=""):
 
 
 def free_everything(tag=""):
-    """Unload every model ComfyUI is holding and give the memory back."""
+    """Unload every model ComfyUI is holding and give the memory back.
+
+    ``unload_all_models`` is only the first of three things that have to
+    happen. It moves weights off the GPU, but the host pages those weights
+    were pinned into stay registered — pinned memory is a separate subsystem
+    with its own eviction (``free_pins``), and on Windows ComfyUI will pin up
+    to 40% of RAM. Leaving that held is what makes the machine crawl while a
+    script runs, even though a measurement taken afterwards looks clean.
+    ``cleanup_models`` then drops the bookkeeping entries whose models are
+    already gone.
+    """
     import gc
 
     import torch
@@ -59,6 +69,18 @@ def free_everything(tag=""):
     import comfy.model_management as mm
 
     mm.unload_all_models()
+
+    for release, kwargs in (("free_pins", {"evict_active": True, "loaded": True}),
+                            ("cleanup_models_gc", {}),
+                            ("cleanup_models", {})):
+        fn = getattr(mm, release, None)
+        if fn is None:
+            continue
+        try:
+            fn(1 << 62, **kwargs) if release == "free_pins" else fn(**kwargs)
+        except Exception as exc:  # noqa: BLE001 - never fail a run over cleanup
+            print(f"    [memory] {release} did not run: {exc!r}")
+
     gc.collect()                      # drop the CPU-side weights too
     mm.soft_empty_cache(force=True)
     torch.cuda.empty_cache()
