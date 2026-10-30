@@ -1,0 +1,730 @@
+{
+ "id": "02_latent_color_guidance",
+ "revision": 0,
+ "last_node_id": 10,
+ "last_link_id": 13,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "MarkdownNote",
+   "pos": [
+    -480,
+    40
+   ],
+   "size": [
+    420,
+    380
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "Read me",
+   "properties": {},
+   "widgets_values": [
+    "## Apply Latent Color Guidance\n\nInstead of repairing the colours afterwards, hold them during sampling. The patch corrects the model's own prediction at every step, so the image is composed in the right palette rather than pushed into it.\n\nIt patches `MODEL`, so **any** sampler works downstream — KSampler, KSamplerAdvanced, SamplerCustom, detailers.\n\n- `strength` 0.4-0.7 is the usual range.\n- `start_percent` 0.15 skips the first steps, where the prediction is still featureless and its spread means nothing.\n- `space = auto` projects through the model's own latent-to-RGB matrix, so this works on SD1.5, SDXL, SD3, Flux and the video models alike.\n\nBypass the patch node (Ctrl+B) to see the difference."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 2,
+   "type": "CheckpointLoaderSimple",
+   "pos": [
+    20,
+    40
+   ],
+   "size": [
+    340,
+    100
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "ckpt_name",
+     "name": "ckpt_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "ckpt_name"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      1
+     ]
+    },
+    {
+     "localized_name": "CLIP",
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      2,
+      3
+     ]
+    },
+    {
+     "localized_name": "VAE",
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      5,
+      12
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CheckpointLoaderSimple"
+   },
+   "widgets_values": [
+    null
+   ]
+  },
+  {
+   "id": 3,
+   "type": "LoadImage",
+   "pos": [
+    20,
+    200
+   ],
+   "size": [
+    340,
+    320
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "COMBO",
+     "widget": {
+      "name": "image"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      4
+     ]
+    },
+    {
+     "localized_name": "MASK",
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "00 (1).png"
+   ]
+  },
+  {
+   "id": 4,
+   "type": "VAEEncode",
+   "pos": [
+    400,
+    560
+   ],
+   "size": [
+    240,
+    60
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "pixels",
+     "name": "pixels",
+     "type": "IMAGE",
+     "link": 4
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      6,
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEEncode"
+   },
+   "widgets_values": [],
+   "title": "Reference latent"
+  },
+  {
+   "id": 5,
+   "type": "CLIPTextEncode",
+   "pos": [
+    400,
+    40
+   ],
+   "size": [
+    380,
+    120
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "a photograph, natural light, fine detail"
+   ],
+   "title": "Positive"
+  },
+  {
+   "id": 6,
+   "type": "CLIPTextEncode",
+   "pos": [
+    400,
+    200
+   ],
+   "size": [
+    380,
+    120
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      10
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "blurry, low quality"
+   ],
+   "title": "Negative"
+  },
+  {
+   "id": 7,
+   "type": "ApplyLatentColorGuidance",
+   "pos": [
+    820,
+    400
+   ],
+   "size": [
+    340,
+    240
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 1
+    },
+    {
+     "localized_name": "reference_latent",
+     "name": "reference_latent",
+     "type": "LATENT",
+     "link": 6
+    },
+    {
+     "localized_name": "strength",
+     "name": "strength",
+     "type": "FLOAT",
+     "widget": {
+      "name": "strength"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "start_percent",
+     "name": "start_percent",
+     "type": "FLOAT",
+     "widget": {
+      "name": "start_percent"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "end_percent",
+     "name": "end_percent",
+     "type": "FLOAT",
+     "widget": {
+      "name": "end_percent"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "method",
+     "name": "method",
+     "type": "COMBO",
+     "widget": {
+      "name": "method"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "space",
+     "name": "space",
+     "type": "COMBO",
+     "widget": {
+      "name": "space"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "max_gain",
+     "name": "max_gain",
+     "type": "FLOAT",
+     "widget": {
+      "name": "max_gain"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lowpass",
+     "name": "lowpass",
+     "type": "INT",
+     "widget": {
+      "name": "lowpass"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "mask",
+     "name": "mask",
+     "type": "MASK",
+     "link": null,
+     "shape": 7
+    },
+    {
+     "localized_name": "temporal",
+     "name": "temporal",
+     "type": "COMBO",
+     "widget": {
+      "name": "temporal"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "links": [
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ApplyLatentColorGuidance"
+   },
+   "widgets_values": [
+    0.6,
+    0.15,
+    0.9,
+    "auto",
+    "auto",
+    2.0,
+    0,
+    "global"
+   ]
+  },
+  {
+   "id": 8,
+   "type": "KSampler",
+   "pos": [
+    1200,
+    40
+   ],
+   "size": [
+    320,
+    280
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 8
+    },
+    {
+     "localized_name": "seed",
+     "name": "seed",
+     "type": "INT",
+     "widget": {
+      "name": "seed"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "steps",
+     "name": "steps",
+     "type": "INT",
+     "widget": {
+      "name": "steps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "cfg",
+     "name": "cfg",
+     "type": "FLOAT",
+     "widget": {
+      "name": "cfg"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sampler_name",
+     "name": "sampler_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "sampler_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scheduler",
+     "name": "scheduler",
+     "type": "COMBO",
+     "widget": {
+      "name": "scheduler"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "positive",
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 9
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 10
+    },
+    {
+     "localized_name": "latent_image",
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 7
+    },
+    {
+     "localized_name": "denoise",
+     "name": "denoise",
+     "type": "FLOAT",
+     "widget": {
+      "name": "denoise"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    0,
+    "fixed",
+    24,
+    7.0,
+    "dpmpp_2m",
+    "karras",
+    0.75
+   ]
+  },
+  {
+   "id": 9,
+   "type": "VAEDecode",
+   "pos": [
+    1560,
+    40
+   ],
+   "size": [
+    240,
+    60
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "samples",
+     "name": "samples",
+     "type": "LATENT",
+     "link": 11
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      13
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 10,
+   "type": "SaveImage",
+   "pos": [
+    1560,
+    140
+   ],
+   "size": [
+    380,
+    400
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 13
+    },
+    {
+     "localized_name": "filename_prefix",
+     "name": "filename_prefix",
+     "type": "STRING",
+     "widget": {
+      "name": "filename_prefix"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "ComfyUI"
+   ]
+  }
+ ],
+ "links": [
+  [
+   1,
+   2,
+   0,
+   7,
+   0,
+   "MODEL"
+  ],
+  [
+   2,
+   2,
+   1,
+   5,
+   1,
+   "CLIP"
+  ],
+  [
+   3,
+   2,
+   1,
+   6,
+   1,
+   "CLIP"
+  ],
+  [
+   4,
+   3,
+   0,
+   4,
+   0,
+   "IMAGE"
+  ],
+  [
+   5,
+   2,
+   2,
+   4,
+   1,
+   "VAE"
+  ],
+  [
+   6,
+   4,
+   0,
+   7,
+   1,
+   "LATENT"
+  ],
+  [
+   7,
+   4,
+   0,
+   8,
+   8,
+   "LATENT"
+  ],
+  [
+   8,
+   7,
+   0,
+   8,
+   0,
+   "MODEL"
+  ],
+  [
+   9,
+   5,
+   0,
+   8,
+   6,
+   "CONDITIONING"
+  ],
+  [
+   10,
+   6,
+   0,
+   8,
+   7,
+   "CONDITIONING"
+  ],
+  [
+   11,
+   8,
+   0,
+   9,
+   0,
+   "LATENT"
+  ],
+  [
+   12,
+   2,
+   2,
+   9,
+   1,
+   "VAE"
+  ],
+  [
+   13,
+   9,
+   0,
+   10,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}

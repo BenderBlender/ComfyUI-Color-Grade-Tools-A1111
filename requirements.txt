@@ -1,0 +1,4 @@
+# Nothing beyond what ComfyUI already installs.
+# OpenCV is used automatically when present (it makes the LAB conversion
+# bit-identical to Automatic1111's), but the nodes fall back to numpy.
+numpy

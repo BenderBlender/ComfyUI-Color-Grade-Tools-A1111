@@ -1,0 +1,38 @@
+
+====================================================================
+SD1.5: photon_v1.safetensors
+====================================================================
+  [memory before load] VRAM 1.5/24.0 GB  RAM 21/128 GB
+  loaded in 0.6s
+  [memory after load] VRAM 1.5/24.0 GB  RAM 23/128 GB
+
+  detected space: <LatentColorSpace rgb_proj C=4 ndim=4>
+  process_in scale factor: 0.18215  (the original node skipped this entirely)
+  projected colour error 0.1767 -> 0.0000 (100.0% removed)
+
+  sampler coverage (hook calls per 6-step run):
+    euler               6  ok
+    euler_ancestral     6  ok
+    heun               11  ok
+    dpm_2              11  ok
+    dpmpp_2m            6  ok
+    dpmpp_sde          11  ok
+    ddim                6  ok
+    uni_pc              6  ok
+    lcm                 6  ok
+    dpm_adaptive       57  ok
+    res_multistep       6  ok
+
+  image node, deliberate red/blue cast (LAB levels):
+    before  12.35  ->  after   1.63   (86.8% removed)
+    brightness preserved to 0.00097 (a1111 blend keeps the original's luma)
+
+  colour distance from the reference (LAB levels, lower is closer):
+    without guidance   mean   6.09   spread   5.76   (1.0s)
+    with guidance      mean   4.76   spread   5.58   (0.9s)
+    improvement         21.8%
+    detail energy        6.81 ->   7.60 (+11.6%)
+  [memory after unload SD1.5] VRAM 1.6/24.0 GB  RAM 22/128 GB
+
+====================================================================
+all integration checks passed

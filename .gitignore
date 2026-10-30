@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ComfyUI runtime leftovers
+*.log
+output/
+temp/
+
+# Full-resolution demo frames; the contact sheets in docs/demos are what the
+# README uses. Regenerate with tools/make_demos.py.
+docs/demos/frames/

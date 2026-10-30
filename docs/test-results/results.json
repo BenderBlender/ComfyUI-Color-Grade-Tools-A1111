@@ -1,0 +1,18 @@
+{
+  "SD1.5": {
+    "space": "<LatentColorSpace rgb_proj C=4 ndim=4>",
+    "scale_ratio": 0.1821500062942505,
+    "latent_error_before": 0.17665648460388184,
+    "latent_error_after": 1.9868215517249155e-08,
+    "cast_before": 12.345927238464355,
+    "cast_after": 1.6327718496322632,
+    "luma_shift": 0.000971083587501198,
+    "plain_mean": 6.0915374755859375,
+    "guided_mean": 4.7611236572265625,
+    "improvement_pct": 21.84036170985559,
+    "detail_plain": 6.807252883911133,
+    "detail_guided": 7.599265098571777,
+    "seconds_plain": 0.9513707160949707,
+    "seconds_guided": 0.9346513748168945
+  }
+}

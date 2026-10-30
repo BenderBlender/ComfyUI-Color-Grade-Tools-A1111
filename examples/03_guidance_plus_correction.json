@@ -1,0 +1,963 @@
+{
+ "id": "03_guidance_plus_correction",
+ "revision": 0,
+ "last_node_id": 12,
+ "last_link_id": 18,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "MarkdownNote",
+   "pos": [
+    -480,
+    40
+   ],
+   "size": [
+    420,
+    320
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "Read me",
+   "properties": {},
+   "widgets_values": [
+    "## Both stages together\n\nThe usual production setup for an upscale or refine pass that has to keep the original palette:\n\n1. **Apply Latent Color Guidance** holds the colour while the model works, so it never commits to the wrong palette.\n2. **A1111 Color Correction** cleans up whatever drift is left after the decode, which is cheap and exact.\n\n`Latent Color Match` is also wired here, running on the init latent before sampling starts — useful when the input itself is already off."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 2,
+   "type": "CheckpointLoaderSimple",
+   "pos": [
+    20,
+    40
+   ],
+   "size": [
+    340,
+    100
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "ckpt_name",
+     "name": "ckpt_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "ckpt_name"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      1,
+      9
+     ]
+    },
+    {
+     "localized_name": "CLIP",
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      2,
+      3
+     ]
+    },
+    {
+     "localized_name": "VAE",
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      5,
+      15
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CheckpointLoaderSimple"
+   },
+   "widgets_values": [
+    null
+   ]
+  },
+  {
+   "id": 3,
+   "type": "LoadImage",
+   "pos": [
+    20,
+    200
+   ],
+   "size": [
+    340,
+    320
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "COMBO",
+     "widget": {
+      "name": "image"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      4,
+      17
+     ]
+    },
+    {
+     "localized_name": "MASK",
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "00 (1).png"
+   ]
+  },
+  {
+   "id": 4,
+   "type": "VAEEncode",
+   "pos": [
+    400,
+    560
+   ],
+   "size": [
+    240,
+    60
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "pixels",
+     "name": "pixels",
+     "type": "IMAGE",
+     "link": 4
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      6,
+      7,
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEEncode"
+   },
+   "widgets_values": [],
+   "title": "Reference latent"
+  },
+  {
+   "id": 5,
+   "type": "CLIPTextEncode",
+   "pos": [
+    400,
+    40
+   ],
+   "size": [
+    380,
+    120
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      12
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "a photograph, natural light, fine detail"
+   ],
+   "title": "Positive"
+  },
+  {
+   "id": 6,
+   "type": "CLIPTextEncode",
+   "pos": [
+    400,
+    200
+   ],
+   "size": [
+    380,
+    120
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      13
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "blurry, low quality"
+   ],
+   "title": "Negative"
+  },
+  {
+   "id": 7,
+   "type": "LatentColorMatch",
+   "pos": [
+    820,
+    640
+   ],
+   "size": [
+    330,
+    200
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "samples",
+     "name": "samples",
+     "type": "LATENT",
+     "link": 7
+    },
+    {
+     "localized_name": "reference",
+     "name": "reference",
+     "type": "LATENT",
+     "link": 8
+    },
+    {
+     "localized_name": "strength",
+     "name": "strength",
+     "type": "FLOAT",
+     "widget": {
+      "name": "strength"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "method",
+     "name": "method",
+     "type": "COMBO",
+     "widget": {
+      "name": "method"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "space",
+     "name": "space",
+     "type": "COMBO",
+     "widget": {
+      "name": "space"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "max_gain",
+     "name": "max_gain",
+     "type": "FLOAT",
+     "widget": {
+      "name": "max_gain"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 9,
+     "shape": 7
+    },
+    {
+     "localized_name": "mask",
+     "name": "mask",
+     "type": "MASK",
+     "link": null,
+     "shape": 7
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "samples",
+     "name": "samples",
+     "type": "LATENT",
+     "links": [
+      10
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LatentColorMatch"
+   },
+   "widgets_values": [
+    1.0,
+    "auto",
+    "auto",
+    2.0
+   ],
+   "title": "Optional: fix the init latent"
+  },
+  {
+   "id": 8,
+   "type": "ApplyLatentColorGuidance",
+   "pos": [
+    820,
+    360
+   ],
+   "size": [
+    340,
+    240
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 1
+    },
+    {
+     "localized_name": "reference_latent",
+     "name": "reference_latent",
+     "type": "LATENT",
+     "link": 6
+    },
+    {
+     "localized_name": "strength",
+     "name": "strength",
+     "type": "FLOAT",
+     "widget": {
+      "name": "strength"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "start_percent",
+     "name": "start_percent",
+     "type": "FLOAT",
+     "widget": {
+      "name": "start_percent"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "end_percent",
+     "name": "end_percent",
+     "type": "FLOAT",
+     "widget": {
+      "name": "end_percent"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "method",
+     "name": "method",
+     "type": "COMBO",
+     "widget": {
+      "name": "method"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "space",
+     "name": "space",
+     "type": "COMBO",
+     "widget": {
+      "name": "space"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "max_gain",
+     "name": "max_gain",
+     "type": "FLOAT",
+     "widget": {
+      "name": "max_gain"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lowpass",
+     "name": "lowpass",
+     "type": "INT",
+     "widget": {
+      "name": "lowpass"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "mask",
+     "name": "mask",
+     "type": "MASK",
+     "link": null,
+     "shape": 7
+    },
+    {
+     "localized_name": "temporal",
+     "name": "temporal",
+     "type": "COMBO",
+     "widget": {
+      "name": "temporal"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "links": [
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ApplyLatentColorGuidance"
+   },
+   "widgets_values": [
+    0.5,
+    0.15,
+    0.9,
+    "auto",
+    "auto",
+    2.0,
+    0,
+    "global"
+   ]
+  },
+  {
+   "id": 9,
+   "type": "KSampler",
+   "pos": [
+    1200,
+    40
+   ],
+   "size": [
+    320,
+    280
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 11
+    },
+    {
+     "localized_name": "seed",
+     "name": "seed",
+     "type": "INT",
+     "widget": {
+      "name": "seed"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "steps",
+     "name": "steps",
+     "type": "INT",
+     "widget": {
+      "name": "steps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "cfg",
+     "name": "cfg",
+     "type": "FLOAT",
+     "widget": {
+      "name": "cfg"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sampler_name",
+     "name": "sampler_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "sampler_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scheduler",
+     "name": "scheduler",
+     "type": "COMBO",
+     "widget": {
+      "name": "scheduler"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "positive",
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 12
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 13
+    },
+    {
+     "localized_name": "latent_image",
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 10
+    },
+    {
+     "localized_name": "denoise",
+     "name": "denoise",
+     "type": "FLOAT",
+     "widget": {
+      "name": "denoise"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      14
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    0,
+    "fixed",
+    24,
+    7.0,
+    "dpmpp_2m",
+    "karras",
+    0.7
+   ]
+  },
+  {
+   "id": 10,
+   "type": "VAEDecode",
+   "pos": [
+    1560,
+    40
+   ],
+   "size": [
+    240,
+    60
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "samples",
+     "name": "samples",
+     "type": "LATENT",
+     "link": 14
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 15
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      16
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 11,
+   "type": "A1111ColorCorrection",
+   "pos": [
+    1560,
+    140
+   ],
+   "size": [
+    330,
+    180
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 16
+    },
+    {
+     "localized_name": "reference",
+     "name": "reference",
+     "type": "IMAGE",
+     "link": 17
+    },
+    {
+     "localized_name": "strength",
+     "name": "strength",
+     "type": "FLOAT",
+     "widget": {
+      "name": "strength"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "blend_mode",
+     "name": "blend_mode",
+     "type": "COMBO",
+     "widget": {
+      "name": "blend_mode"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "match_channels",
+     "name": "match_channels",
+     "type": "COMBO",
+     "widget": {
+      "name": "match_channels"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "ref_blur",
+     "name": "ref_blur",
+     "type": "INT",
+     "widget": {
+      "name": "ref_blur"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "mask",
+     "name": "mask",
+     "type": "MASK",
+     "link": null,
+     "shape": 7
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "links": [
+      18
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "A1111ColorCorrection"
+   },
+   "widgets_values": [
+    0.8,
+    "a1111",
+    "L+a+b",
+    0
+   ]
+  },
+  {
+   "id": 12,
+   "type": "SaveImage",
+   "pos": [
+    1930,
+    40
+   ],
+   "size": [
+    380,
+    400
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 18
+    },
+    {
+     "localized_name": "filename_prefix",
+     "name": "filename_prefix",
+     "type": "STRING",
+     "widget": {
+      "name": "filename_prefix"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "ComfyUI"
+   ]
+  }
+ ],
+ "links": [
+  [
+   1,
+   2,
+   0,
+   8,
+   0,
+   "MODEL"
+  ],
+  [
+   2,
+   2,
+   1,
+   5,
+   1,
+   "CLIP"
+  ],
+  [
+   3,
+   2,
+   1,
+   6,
+   1,
+   "CLIP"
+  ],
+  [
+   4,
+   3,
+   0,
+   4,
+   0,
+   "IMAGE"
+  ],
+  [
+   5,
+   2,
+   2,
+   4,
+   1,
+   "VAE"
+  ],
+  [
+   6,
+   4,
+   0,
+   8,
+   1,
+   "LATENT"
+  ],
+  [
+   7,
+   4,
+   0,
+   7,
+   0,
+   "LATENT"
+  ],
+  [
+   8,
+   4,
+   0,
+   7,
+   1,
+   "LATENT"
+  ],
+  [
+   9,
+   2,
+   0,
+   7,
+   6,
+   "MODEL"
+  ],
+  [
+   10,
+   7,
+   0,
+   9,
+   8,
+   "LATENT"
+  ],
+  [
+   11,
+   8,
+   0,
+   9,
+   0,
+   "MODEL"
+  ],
+  [
+   12,
+   5,
+   0,
+   9,
+   6,
+   "CONDITIONING"
+  ],
+  [
+   13,
+   6,
+   0,
+   9,
+   7,
+   "CONDITIONING"
+  ],
+  [
+   14,
+   9,
+   0,
+   10,
+   0,
+   "LATENT"
+  ],
+  [
+   15,
+   2,
+   2,
+   10,
+   1,
+   "VAE"
+  ],
+  [
+   16,
+   10,
+   0,
+   11,
+   0,
+   "IMAGE"
+  ],
+  [
+   17,
+   3,
+   0,
+   11,
+   1,
+   "IMAGE"
+  ],
+  [
+   18,
+   11,
+   0,
+   12,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}
