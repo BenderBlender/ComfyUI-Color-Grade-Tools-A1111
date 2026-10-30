@@ -17,6 +17,8 @@ _MODULES = [
     "a1111_nodes.latent_nodes",
     "a1111_nodes.loopback",
     "a1111_nodes.grading",
+    "a1111_nodes.inspect_nodes",
+    "a1111_nodes.lut_nodes",
     "a1111_nodes.legacy",
 ]
 

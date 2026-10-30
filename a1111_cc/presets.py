@@ -51,6 +51,54 @@ BUILT_IN = {
                            gamma_master=1.04, saturation=1.05),
     "Moonlight": _preset(lift_b=0.04, gain_b=0.03, gain_r=-0.035,
                          gamma_master=0.95, saturation=0.82),
+
+    # Written here rather than shipped as .cube files. A table bought or
+    # downloaded is someone's work under someone's licence, and most "free"
+    # packs forbid passing them on; naming one after a film borrows a
+    # trademark as well. These are built from the wheels instead, which also
+    # makes them better behaved: you can see where they are, take them apart,
+    # and turn them down.
+    "Green gold": _preset(
+        # The green-and-amber treatment of a certain Montmartre café: warm
+        # gold through the highlights, green sitting in the midtones, shadows
+        # kept slightly cool so the green reads as colour and not as murk.
+        lift_b=0.018, lift_g=0.008,
+        gamma_g=0.030, gamma_r=0.012, gamma_b=-0.030,
+        gain_r=0.045, gain_g=0.028, gain_b=-0.050,
+        saturation=1.12, contrast=1.05,
+    ),
+    "Print stock": _preset(
+        # The dense, contrasty look of a film print: deep shadows, rich reds,
+        # highlights that roll rather than clip.
+        lift_master=-0.015, lift_b=0.010,
+        gamma_master=0.96,
+        gain_r=0.030, gain_b=-0.012,
+        saturation=1.15, contrast=1.14,
+    ),
+    "Two strip": _preset(
+        # Early two-colour processes had no blue record at all: everything
+        # lands between warm red and cyan.
+        lift_b=0.020, lift_g=0.012,
+        gain_r=0.055, gain_g=-0.010, gain_b=-0.030,
+        saturation=0.78, contrast=1.06,
+    ),
+    "Day for night": _preset(
+        # Shot in daylight, graded for dusk: cold, dim, and desaturated
+        # without going monochrome.
+        lift_b=0.030, lift_r=-0.020,
+        gamma_master=0.88, gamma_b=0.020,
+        gain_master=-0.060, gain_b=0.025, gain_r=-0.030,
+        saturation=0.70, contrast=1.08,
+    ),
+    "Cross process": _preset(
+        # Film run through the wrong chemistry: shadows go cyan, highlights
+        # go yellow, and contrast climbs.
+        lift_b=0.045, lift_g=0.018, lift_r=-0.025,
+        gain_r=0.035, gain_g=0.030, gain_b=-0.055,
+        saturation=1.22, contrast=1.18,
+    ),
+    "Crush blacks": _preset(lift_master=-0.030, contrast=1.10),
+    "Lift shadows": _preset(lift_master=0.040, gamma_master=1.03),
 }
 
 _SAFE_NAME = re.compile(r"[^\w \-().]+", re.UNICODE)
