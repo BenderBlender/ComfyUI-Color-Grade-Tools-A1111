@@ -1,0 +1,596 @@
+{
+ "id": "04_a1111_loopback",
+ "revision": 0,
+ "last_node_id": 8,
+ "last_link_id": 9,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "MarkdownNote",
+   "pos": [
+    -500,
+    40
+   ],
+   "size": [
+    440,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "Read me",
+   "properties": {},
+   "widgets_values": [
+    "## A1111 Loopback\n\nThis is what people remember as A1111's colour correction being \"built into sampling\". It is not: the webui has no correction inside its sampler. It is the Loopback script.\n\nEach pass is a full img2img, so the **content** is reworked every time — that is why it looks like more than a colour filter. What stays fixed is the reference: measured once from the starting image and reused by every pass, so the palette cannot drift however long the chain runs.\n\n- `denoise` falls from the first pass to `final_denoise`, so the chain settles instead of wandering.\n- `hold_exposure` is ours, not A1111's. Its blend takes lightness from the generated image, so a long chain holds colour but can still wander brighter or darker. Raise this if yours does.\n- Wire a `mask` to rework only part of the frame: everything outside is pasted back from the original after each pass, so it does not soften.\n\n`all_passes` is every pass as a batch — scrub it to see the progression."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 2,
+   "type": "CheckpointLoaderSimple",
+   "pos": [
+    20,
+    40
+   ],
+   "size": [
+    340,
+    100
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "ckpt_name",
+     "name": "ckpt_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "ckpt_name"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      1
+     ]
+    },
+    {
+     "localized_name": "CLIP",
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      3,
+      4
+     ]
+    },
+    {
+     "localized_name": "VAE",
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CheckpointLoaderSimple"
+   },
+   "widgets_values": [
+    null
+   ]
+  },
+  {
+   "id": 3,
+   "type": "LoadImage",
+   "pos": [
+    20,
+    200
+   ],
+   "size": [
+    340,
+    320
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "COMBO",
+     "widget": {
+      "name": "image"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      7
+     ]
+    },
+    {
+     "localized_name": "MASK",
+     "name": "MASK",
+     "type": "MASK",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "00 (1).png"
+   ]
+  },
+  {
+   "id": 4,
+   "type": "CLIPTextEncode",
+   "pos": [
+    400,
+    40
+   ],
+   "size": [
+    380,
+    120
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      5
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "a photograph, natural light, fine detail"
+   ],
+   "title": "Positive"
+  },
+  {
+   "id": 5,
+   "type": "CLIPTextEncode",
+   "pos": [
+    400,
+    200
+   ],
+   "size": [
+    380,
+    120
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      6
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "blurry, low quality"
+   ],
+   "title": "Negative"
+  },
+  {
+   "id": 6,
+   "type": "A1111Loopback",
+   "pos": [
+    820,
+    40
+   ],
+   "size": [
+    360,
+    460
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 1
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 2
+    },
+    {
+     "localized_name": "positive",
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 5
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 6
+    },
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 7
+    },
+    {
+     "localized_name": "seed",
+     "name": "seed",
+     "type": "INT",
+     "widget": {
+      "name": "seed"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "steps",
+     "name": "steps",
+     "type": "INT",
+     "widget": {
+      "name": "steps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "cfg",
+     "name": "cfg",
+     "type": "FLOAT",
+     "widget": {
+      "name": "cfg"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sampler_name",
+     "name": "sampler_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "sampler_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scheduler",
+     "name": "scheduler",
+     "type": "COMBO",
+     "widget": {
+      "name": "scheduler"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "loops",
+     "name": "loops",
+     "type": "INT",
+     "widget": {
+      "name": "loops"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "denoise",
+     "name": "denoise",
+     "type": "FLOAT",
+     "widget": {
+      "name": "denoise"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "final_denoise",
+     "name": "final_denoise",
+     "type": "FLOAT",
+     "widget": {
+      "name": "final_denoise"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "denoise_curve",
+     "name": "denoise_curve",
+     "type": "COMBO",
+     "widget": {
+      "name": "denoise_curve"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "color_correction",
+     "name": "color_correction",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "color_correction"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "hold_exposure",
+     "name": "hold_exposure",
+     "type": "FLOAT",
+     "widget": {
+      "name": "hold_exposure"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "keep_all_passes",
+     "name": "keep_all_passes",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "keep_all_passes"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "mask",
+     "name": "mask",
+     "type": "MASK",
+     "link": null,
+     "shape": 7
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "all_passes",
+     "name": "all_passes",
+     "type": "IMAGE",
+     "links": [
+      8
+     ]
+    },
+    {
+     "localized_name": "final",
+     "name": "final",
+     "type": "IMAGE",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "A1111Loopback"
+   },
+   "widgets_values": [
+    0,
+    "fixed",
+    24,
+    7.0,
+    "dpmpp_2m",
+    "karras",
+    4,
+    0.75,
+    0.5,
+    "Linear",
+    true,
+    0.0,
+    true
+   ]
+  },
+  {
+   "id": 7,
+   "type": "PreviewImage",
+   "pos": [
+    1220,
+    40
+   ],
+   "size": [
+    340,
+    320
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "Every pass"
+  },
+  {
+   "id": 8,
+   "type": "SaveImage",
+   "pos": [
+    1220,
+    400
+   ],
+   "size": [
+    380,
+    400
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 9
+    },
+    {
+     "localized_name": "filename_prefix",
+     "name": "filename_prefix",
+     "type": "STRING",
+     "widget": {
+      "name": "filename_prefix"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "ComfyUI"
+   ],
+   "title": "Final pass"
+  }
+ ],
+ "links": [
+  [
+   1,
+   2,
+   0,
+   6,
+   0,
+   "MODEL"
+  ],
+  [
+   2,
+   2,
+   2,
+   6,
+   1,
+   "VAE"
+  ],
+  [
+   3,
+   2,
+   1,
+   4,
+   1,
+   "CLIP"
+  ],
+  [
+   4,
+   2,
+   1,
+   5,
+   1,
+   "CLIP"
+  ],
+  [
+   5,
+   4,
+   0,
+   6,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   6,
+   5,
+   0,
+   6,
+   3,
+   "CONDITIONING"
+  ],
+  [
+   7,
+   3,
+   0,
+   6,
+   4,
+   "IMAGE"
+  ],
+  [
+   8,
+   6,
+   0,
+   7,
+   0,
+   "IMAGE"
+  ],
+  [
+   9,
+   6,
+   1,
+   8,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}

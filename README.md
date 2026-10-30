@@ -97,6 +97,29 @@ and the 128↔32 channel repacking Flux.2 needs round-trips bit-for-bit.
   correlations *between* channels, so a cast lying diagonally across them is
   removed rather than approximated axis by axis.
 
+### The thing people remember as "built into sampling"
+
+A1111 has **no colour correction inside its sampler**. Reading
+`sd_samplers_cfg_denoiser.py`, `sd_samplers_kdiffusion.py` and
+`sd_samplers_common.py` turns up no correction on any step; the only per-step
+operation touching the latent is the inpaint mask blend.
+
+What people remember is `scripts/loopback.py`, and **A1111 Loopback**
+reproduces it: a chain of img2img passes where each output becomes the next
+input, and every pass is corrected against one reference measured once from
+the starting image. Because each pass is a full img2img at 0.75 → 0.5 denoise,
+the *content* is reworked every time — which is exactly why it felt like more
+than a colour filter — while the anchor never moves, so the palette cannot
+drift however long the chain runs.
+
+Testing it turned up a property of A1111's algorithm worth knowing about: its
+blend takes lightness from the generated image, so a chain holds **colour**
+perfectly flat and lets **exposure** drift uncorrected. Over ten passes on a
+synthetic cast, chroma error stayed at 0.16 while lightness went to 28. The
+node adds an optional `hold_exposure` for that, clearly marked as going beyond
+A1111 — it matches lightness by average and spread rather than by its whole
+histogram, so deliberate changes in lighting survive.
+
 ---
 
 ## The nodes
@@ -105,6 +128,7 @@ and the 128↔32 channel repacking Flux.2 needs round-trips bit-for-bit.
 |---|---|---|---|
 | **Apply Latent Color Guidance** | `MODEL`, `LATENT` | `MODEL` | Holding a palette through sampling. The main one. |
 | **A1111 Color Correction** | `IMAGE`, `IMAGE` | `IMAGE` | The faithful A1111 post-pass on a decoded image. |
+| **A1111 Loopback** | `MODEL`, `VAE`, `IMAGE` | `IMAGE` | A chain of img2img passes anchored to one reference. |
 | **Latent Color Match** | `LATENT`, `LATENT` | `LATENT` | One-shot match, before or after sampling. |
 | **KSampler (A1111 Latent Color Match)** | — | — | Deprecated. Kept so old workflows still open. |
 
@@ -141,6 +165,8 @@ Three workflows are in [`examples/`](examples) — drag any into ComfyUI:
    Ctrl+B to compare.
 3. **`03_guidance_plus_correction.json`** — both stages, the usual production
    setup for an upscale or refine pass.
+4. **`04_a1111_loopback.json`** — the Loopback chain, with every pass
+   previewed so you can watch the content change while the palette does not.
 
 | Setting | Start at | Why |
 |---|---|---|
@@ -176,6 +202,20 @@ should.
 
 The inverted blend at full strength reaches only 3.4.
 
+**Loopback chain** (SD 1.5, 512, three passes at denoise 0.65 → 0.45, drift
+from the starting image):
+
+| | Lightness | Chroma |
+|---|---|---|
+| no correction | 5.93 | 4.77 |
+| A1111's correction | 5.51 | **0.13** |
+| plus `hold_exposure` | **0.04** | 0.17 |
+
+The middle row is the shape of A1111's algorithm, not a shortcoming of the
+port: colour is pinned, exposure is left alone. Over a ten-pass synthetic
+chain chroma error stays flat — 0.08 after two passes, 0.16 after ten — while
+lightness climbs with every pass unless `hold_exposure` is raised.
+
 ### Every sampler, not most of them
 
 The original node modified the sampler's working tensor in place from a
@@ -198,11 +238,12 @@ own step count.
 
 ### Tests
 
-44 unit tests, needing only numpy and torch:
+68 unit tests, needing only numpy and torch:
 
 ```bash
 python tests/test_color.py          # image maths, incl. A1111 parity   (14)
 python tests/test_latent_core.py    # statistics, transfers, projection (30)
+python tests/test_loopback.py       # the chain, with sampler and VAE stubbed (24)
 python tests/test_examples.py       # the example workflows stay loadable
 ```
 

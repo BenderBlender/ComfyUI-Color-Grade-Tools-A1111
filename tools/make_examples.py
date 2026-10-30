@@ -280,6 +280,56 @@ def build_both(core, pack, out):
     w.dump(os.path.join(out, "03_guidance_plus_correction.json"))
 
 
+def build_loopback(core, pack, out):
+    """A1111's Loopback: a chain of img2img passes anchored to one reference."""
+    w = Workflow()
+    w.note(
+        "## A1111 Loopback\n\n"
+        "This is what people remember as A1111's colour correction being \"built "
+        "into sampling\". It is not: the webui has no correction inside its "
+        "sampler. It is the Loopback script.\n\n"
+        "Each pass is a full img2img, so the **content** is reworked every time — "
+        "that is why it looks like more than a colour filter. What stays fixed is "
+        "the reference: measured once from the starting image and reused by every "
+        "pass, so the palette cannot drift however long the chain runs.\n\n"
+        "- `denoise` falls from the first pass to `final_denoise`, so the chain "
+        "settles instead of wandering.\n"
+        "- `hold_exposure` is ours, not A1111's. Its blend takes lightness from "
+        "the generated image, so a long chain holds colour but can still wander "
+        "brighter or darker. Raise this if yours does.\n"
+        "- Wire a `mask` to rework only part of the frame: everything outside is "
+        "pasted back from the original after each pass, so it does not soften.\n\n"
+        "`all_passes` is every pass as a batch — scrub it to see the progression.",
+        (-500, 40), (440, 420))
+
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    load = w.add(core["LoadImage"], "LoadImage", (20, 200), size=(340, 320))
+    pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 40),
+                {"text": "a photograph, natural light, fine detail"}, (380, 120), "Positive")
+    neg = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (400, 200),
+                {"text": "blurry, low quality"}, (380, 120), "Negative")
+    loop = w.add(pack["A1111Loopback"], "A1111Loopback", (820, 40),
+                 {"loops": 4, "steps": 24, "cfg": 7.0, "sampler_name": "dpmpp_2m",
+                  "scheduler": "karras", "denoise": 0.75, "final_denoise": 0.5,
+                  "denoise_curve": "Linear", "color_correction": True},
+                 (360, 460))
+    every = w.add(core["PreviewImage"], "PreviewImage", (1220, 40), size=(340, 320),
+                  title="Every pass")
+    final = w.add(core["SaveImage"], "SaveImage", (1220, 400), size=(380, 400),
+                  title="Final pass")
+
+    w.link(ckpt, 0, loop, "model")
+    w.link(ckpt, 2, loop, "vae")
+    w.link(ckpt, 1, pos, "clip")
+    w.link(ckpt, 1, neg, "clip")
+    w.link(pos, 0, loop, "positive")
+    w.link(neg, 0, loop, "negative")
+    w.link(load, 0, loop, "image")
+    w.link(loop, 0, every, "images")
+    w.link(loop, 1, final, "images")
+    w.dump(os.path.join(out, "04_a1111_loopback.json"))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--comfy", required=True)
@@ -305,6 +355,7 @@ def main():
     build_img2img(core, pack, out)
     build_guidance(core, pack, out)
     build_both(core, pack, out)
+    build_loopback(core, pack, out)
 
 
 if __name__ == "__main__":
