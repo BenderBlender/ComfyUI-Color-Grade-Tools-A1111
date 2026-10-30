@@ -96,8 +96,24 @@ class A1111ColorCorrection:
     FUNCTION = "apply"
     CATEGORY = "ColorKit/image"
     DESCRIPTION = (
-        "Automatic1111-style img2img colour correction: LAB histogram matching against a "
-        "reference image, blended back so the generated image keeps its own brightness."
+        "What the Automatic1111 webui does when you tick 'colour correction' on an "
+        "img2img pass, reproduced exactly.
+
+"
+        "WHAT IT IS FOR. Any img2img or refine pass drifts in colour, and the higher "
+        "the denoise the further it goes. Give this the result and the picture you "
+        "started from, and it puts the palette back.
+
+"
+        "HOW IT WORKS. The result's histogram is matched to the reference in LAB, then "
+        "blended so the generated image keeps its own brightness and takes only the "
+        "reference's colour. That last part is the whole operation: the default "
+        "blend_mode 'a1111' is the webui's behaviour, while 'lab_luminosity' is the "
+        "opposite trade and keeps the drift.
+
+"
+        "WHERE IT GOES. After VAEDecode. Wire the img2img input picture into "
+        "'reference'. Exact and cheap — nothing is sampled."
     )
 
     def apply(self, image, reference, strength=1.0, blend_mode="a1111",

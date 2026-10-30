@@ -93,8 +93,29 @@ class ApplyLatentColorGuidance:
     FUNCTION = "apply"
     CATEGORY = "ColorKit/model"
     DESCRIPTION = (
-        "Patch a model so that, while it samples, each prediction is pulled towards a "
-        "reference latent's colours. Works with any sampler and any model family."
+        "Hold a reference's colours while the image is being made, instead of "
+        "correcting them afterwards.
+
+"
+        "WHAT IT IS FOR. The model composes in the right palette rather than being "
+        "pushed into it at the end, so even the parts a filter cannot reach — what it "
+        "decides to put in the shadows — come out right.
+
+"
+        "WHERE IT GOES. Between the checkpoint and your sampler: it takes MODEL and "
+        "gives MODEL back. It affects only the sampler it is plugged into, so a second "
+        "pass is untouched unless you patch that too.
+
+"
+        "SETTINGS. strength 0.5-0.7 to start. start_percent 0.15 skips the opening "
+        "steps, where the prediction is still featureless. 'space=auto' goes through "
+        "the model's own latent-to-RGB matrix, which is what makes the same controls "
+        "work on SD1.5, SDXL, SD3, Flux and the video models.
+
+"
+        "ACCURACY. The direction of the change is right everywhere; the exact hue is "
+        "approximate, because that matrix is a linear fit to a decoder that is not. "
+        "Finish on an image node when the number matters."
     )
 
     def apply(self, model, reference_latent, strength, start_percent, end_percent,
@@ -160,8 +181,18 @@ class LatentColorMatch:
     FUNCTION = "apply"
     CATEGORY = "ColorKit/latent"
     DESCRIPTION = (
-        "Pull a latent's colours onto a reference latent in a single step — before "
-        "sampling to steer an img2img pass, or after it to correct the result."
+        "Match one latent's colours to another, once.
+
+"
+        "WHAT IT IS FOR. Put it before a sampler to start an img2img pass from the "
+        "right palette, or after one to pull the result back. Cheaper than the "
+        "guidance node and easier to reason about, because it happens once rather "
+        "than at every step.
+
+"
+        "CONNECT THE MODEL. Without it there is no latent format to read, so the "
+        "match falls back to raw channels — fine for SD1.5 and SDXL, wrong for "
+        "anything with more than four."
     )
 
     def apply(self, samples, reference, strength, method, space, max_gain,

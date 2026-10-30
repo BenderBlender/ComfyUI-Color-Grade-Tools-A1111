@@ -147,8 +147,29 @@ class A1111Loopback:
     FUNCTION = "run"
     CATEGORY = "ColorKit/sampling"
     DESCRIPTION = (
-        "Automatic1111's Loopback: a chain of img2img passes, each corrected back to the "
-        "colours of the original image, so the palette holds however long the chain runs."
+        "Automatic1111's Loopback script: a chain of img2img passes, each one corrected "
+        "back to the colours of the picture you started with.
+
+"
+        "WHAT IT IS FOR. Every pass reworks the content — this is a real img2img each "
+        "time, not a filter — while the palette cannot drift, because every pass is "
+        "measured against the same unchanging reference. That combination is what "
+        "people remember as A1111's colour correction being 'built into' sampling. It "
+        "was not: the webui has none in its sampler. It was this.
+
+"
+        "SETTINGS. loops 4 to start. denoise falls from the first pass to "
+        "final_denoise so the chain settles instead of wandering. A mask restricts the "
+        "work to part of the frame, and everything outside is pasted back from the "
+        "original after each pass so it does not soften.
+
+"
+        "hold_exposure is ours, not A1111's: its blend takes lightness from the "
+        "generated image, so a long chain holds colour but can still wander brighter "
+        "or darker. Raise this if yours does.
+
+"
+        "Works on any model family: it operates on decoded pixels."
     )
 
     def run(self, model, vae, positive, negative, image, seed, steps, cfg,

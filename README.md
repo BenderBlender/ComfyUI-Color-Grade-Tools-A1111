@@ -67,7 +67,7 @@ Measured on the latent directly, without the VAE round trip in the way, the
 correction removes **100%** of a deliberate cast (projected colour error
 0.1767 → 0.0000).
 
-### It works on every model family, with no per-model settings
+### The same controls on every model family
 
 SD1.5 and SDXL have 4-channel latents whose channels behave roughly like
 colour axes. SD3 and Flux have 16, Wan 2.2 has 48, Flux.2 and LTX-Video have
@@ -92,6 +92,18 @@ texture, untouched by construction.
 
 Verified exactly (`Pᵀ·Δl == Δrgb` to 1e-6) for 4-, 16- and 48-channel latents,
 and the 128↔32 channel repacking Flux.2 needs round-trips bit-for-bit.
+
+**What that does and does not promise.** The same controls work everywhere,
+and a wheel pushed towards red warms the picture on every family. The exact
+hue and the exact strength do not carry across, because `P` is a least-squares
+fit to a decoder that is not linear — it is the same approximation that makes
+ComfyUI's sampling previews look washed out. Saturated colours are where it is
+furthest off. So treat the latent node as *approximate colour, applied while
+the image is made*, and reach for the image node when the number matters.
+
+Three of the 45 latent formats ship no matrix at all (SeedVR2, CogVideoX,
+HunyuanImage 2.1 Refiner). On those the node says so in the log and leaves the
+model alone rather than pretending.
 
 ### Three transfer methods, for three different problems
 
@@ -154,6 +166,20 @@ histogram, so deliberate changes in lighting survive.
 | **Latent Color Match** | `LATENT`, `LATENT` | `LATENT` | One-shot match, before or after sampling. |
 | **KSampler (A1111 Latent Color Match)** | — | — | Deprecated. Kept so old workflows still open. |
 
+Where each one is exact, and where it is not:
+
+| | Exact | Approximate |
+|---|---|---|
+| **A1111 Color Correction** | always — plain arithmetic on pixels | — |
+| **Grade wheels — image** | always | — |
+| **Apply LUT** | the table, as written | — |
+| **Loopback** | the correction between passes | — |
+| **Latent Color Match**, **Guidance**, **Grade — latent** | the direction of the change | the exact hue and strength, because the latent-to-RGB matrix is a linear fit to a decoder that is not |
+
+The latent nodes earn their place by changing what the model draws rather
+than what comes out of it. When the precise number matters, finish on an
+image node.
+
 All of them take an optional `MASK`, which restricts *where the colours are
 measured* — the usual want for inpainting, where the surrounding plate would
 otherwise drag the statistics towards doing nothing.
@@ -196,7 +222,7 @@ Three workflows are in [`examples/`](examples) — drag any into ComfyUI:
 | `start_percent` | 0.15 | Before that the prediction is still featureless and its spread means nothing. |
 | `end_percent` | 0.9 | Leaving the last steps alone lets detail settle undisturbed. |
 | `method` | `auto` | `reinhard` for 4-channel latents, `mean_only` where channels are not colour axes. |
-| `space` | `auto` | The RGB projection — what makes this model-agnostic. |
+| `space` | `auto` | The RGB projection — the same controls on every family, approximate in the exact hue. |
 
 ---
 
