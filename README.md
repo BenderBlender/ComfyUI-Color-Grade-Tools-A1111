@@ -228,7 +228,7 @@ otherwise drag the statistics towards doing nothing.
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/YOUR_GITHUB_USERNAME/ComfyUI-A1111-ColorCorrection
+git clone https://github.com/BenderBlender/ComfyUI-Color-Grade-Tools-A1111
 ```
 
 Nothing to install afterwards. OpenCV is used automatically when present,

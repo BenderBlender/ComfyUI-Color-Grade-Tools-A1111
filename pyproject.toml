@@ -1,7 +1,7 @@
 # ComfyUI Registry manifest — https://docs.comfy.org/registry/overview
 #
-# BEFORE PUBLISHING: replace YOUR_GITHUB_USERNAME below, and put your
-# Comfy Registry publisher id into [tool.comfy].PublisherId.
+# BEFORE PUBLISHING TO THE REGISTRY: put your Comfy Registry publisher id into
+# [tool.comfy].PublisherId.
 
 [project]
 name = "comfyui-a1111-colorcorrection"
@@ -12,8 +12,8 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.urls]
-Repository = "https://github.com/YOUR_GITHUB_USERNAME/ComfyUI-A1111-ColorCorrection"
-BugTracker = "https://github.com/YOUR_GITHUB_USERNAME/ComfyUI-A1111-ColorCorrection/issues"
+Repository = "https://github.com/BenderBlender/ComfyUI-Color-Grade-Tools-A1111"
+BugTracker = "https://github.com/BenderBlender/ComfyUI-Color-Grade-Tools-A1111/issues"
 
 [tool.comfy]
 PublisherId = ""
