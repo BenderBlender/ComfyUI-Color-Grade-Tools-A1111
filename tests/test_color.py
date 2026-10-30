@@ -30,7 +30,10 @@ def _random_pair(h=96, w=128):
 # --------------------------------------------------------------------------- #
 
 def test_match_histograms_matches_scikit_image():
-    """Our LUT must agree with scikit-image to within the rounding difference."""
+    """Our LUT must equal scikit-image's result exactly. This test used to allow
+    one level — the very «deliberate difference» (rounding where scikit-image
+    truncates) that kept the node off the webui; a check must not borrow the
+    rule of the code it checks (30.10)."""
     try:
         from skimage.exposure import match_histograms
     except ImportError:
@@ -43,8 +46,30 @@ def test_match_histograms_matches_scikit_image():
         mine = C.match_histograms_u8(src, ref)
         theirs = match_histograms(src, ref, channel_axis=2).astype(np.uint8)
         worst = max(worst, int(np.abs(mine.astype(int) - theirs.astype(int)).max()))
-    assert worst <= 1, f"diverged from scikit-image by {worst} levels"
-    print(f"  max divergence from scikit-image: {worst}/255")
+    assert worst == 0, f"diverged from scikit-image by {worst} levels"
+    print(f"  identical to scikit-image on 5 random pairs")
+
+
+def test_luminosity_blend_matches_blendmodes():
+    """The blend must equal blendmodes.blendLayers(corrected, original,
+    LUMINOSITY) exactly, as the webui calls it. Runs where blendmodes is
+    installed (DEMO_RESULTS/venv_a1111ref has the webui's pinned 2022)."""
+    try:
+        from blendmodes.blend import blendLayers, BlendType
+        from PIL import Image
+    except ImportError:
+        print("  (skipped: blendmodes not installed)")
+        return
+    rng = np.random.default_rng(7)
+    worst = 0
+    for _ in range(3):
+        a = rng.integers(0, 256, (48, 64, 3), dtype=np.uint8)
+        b = rng.integers(0, 256, (48, 64, 3), dtype=np.uint8)
+        theirs = np.asarray(blendLayers(Image.fromarray(a), Image.fromarray(b), BlendType.LUMINOSITY).convert("RGB"))
+        mine = C.a1111_luminosity_blend(a, b)
+        worst = max(worst, int(np.abs(mine.astype(int) - theirs.astype(int)).max()))
+    assert worst == 0, f"diverged from blendmodes by {worst} levels"
+    print("  identical to blendmodes on 3 random pairs")
 
 
 def test_match_histograms_is_idempotent_against_itself():

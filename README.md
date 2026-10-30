@@ -170,7 +170,7 @@ Where each one is exact, and where it is not:
 
 | | Exact | Approximate |
 |---|---|---|
-| **A1111 Color Correction** | always — plain arithmetic on pixels | — |
+| **A1111 Color Correction** | always — bit-identical to the webui's own function on its pinned libraries (numpy 1.26.2, OpenCV 4.8.1, scikit-image 0.21.0, blendmodes 2022): 0 of 255 on four img2img pairs | — |
 | **Grade wheels — image** | always | — |
 | **Apply LUT** | the table, as written | — |
 | **Loopback** | the correction between passes | — |

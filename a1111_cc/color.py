@@ -29,8 +29,10 @@ try:
 except ImportError:
     cv2 = None
 
-# blendmodes' luma weights (non-linear sRGB), not the Rec.709 ones
-_LUMA = np.array([0.3, 0.59, 0.11], dtype=np.float32)
+# blendmodes' _lum weights (non-linear sRGB; Rec.601), as the webui's pinned
+# blendmodes==2022 has them. They were 0.3 / 0.59 / 0.11 here — the W3C
+# compositing spec's — which put the blend up to 3/255 off the webui (30.10).
+_LUMA = np.array([0.299, 0.587, 0.114], dtype=np.float64)
 _EPS = 1e-6
 
 
@@ -137,11 +139,12 @@ def match_histograms_u8(src: np.ndarray, ref: np.ndarray) -> np.ndarray:
     probability, found by linear interpolation — written out as a 256-entry LUT
     per channel so ``scikit-image`` is not needed to install this node pack.
 
-    One deliberate difference: scikit-image casts its interpolated result back
-    to uint8, which truncates and so darkens each channel by about half a level;
-    this rounds instead. The two therefore agree to within 1/255, which
-    ``tests/test_color.py`` asserts against the real scikit-image when it is
-    importable.
+    scikit-image writes its interpolated result into a uint8 array, which
+    truncates; so does this. It used to round instead — «a deliberate
+    difference» that left the node 1/255 off the webui on half the values and
+    up to 16/255 after the blend (30.10, against the webui's own function on
+    its pinned libraries). ``tests/test_color.py`` asserts equality with the
+    real scikit-image when it is importable.
     """
     if src.ndim != 3 or ref.ndim != 3:
         raise ValueError("expected [H,W,C] arrays")
@@ -162,7 +165,7 @@ def match_histograms_u8(src: np.ndarray, ref: np.ndarray) -> np.ndarray:
         ref_cdf = np.cumsum(ref_counts[ref_levels]) / n_ref
 
         lut = np.zeros(256, dtype=np.uint8)
-        lut[src_levels] = np.rint(np.interp(src_cdf, ref_cdf, ref_levels)).clip(0, 255)
+        lut[src_levels] = np.interp(src_cdf, ref_cdf, ref_levels).clip(0, 255).astype(np.uint8)
         out[..., c] = lut[src[..., c]]
     return out
 
@@ -204,7 +207,7 @@ def match_histograms_masked_u8(src: np.ndarray, ref: np.ndarray,
         # them as identity would put a step in the middle of the curve, which
         # shows up as banding wherever a soft mask edge spans it.
         mapped = np.interp(src_cdf, ref_cdf, ref_levels)
-        lut = np.rint(np.interp(np.arange(256), src_levels, mapped))
+        lut = np.interp(np.arange(256), src_levels, mapped)      # truncated below, as unmasked
         out[..., c] = lut.clip(0, 255).astype(np.uint8)[src[..., c]]
     return out
 
@@ -214,7 +217,10 @@ def match_histograms_masked_u8(src: np.ndarray, ref: np.ndarray,
 # --------------------------------------------------------------------------- #
 
 def _luma(rgb_f: np.ndarray) -> np.ndarray:
-    return rgb_f @ _LUMA
+    # in blendmodes' own order of operations: a matrix product rounds the last
+    # bit differently, and after the truncation to uint8 that flipped 0.01 % of
+    # values by one level
+    return (rgb_f[..., 0] * _LUMA[0]) + (rgb_f[..., 1] * _LUMA[1]) + (rgb_f[..., 2] * _LUMA[2])
 
 
 def _clip_color(c: np.ndarray) -> np.ndarray:
@@ -244,13 +250,14 @@ def _set_luma(rgb_f: np.ndarray, target_luma: np.ndarray) -> np.ndarray:
 def a1111_luminosity_blend(corrected_u8: np.ndarray, original_u8: np.ndarray) -> np.ndarray:
     """What A1111 actually does: chroma of ``corrected``, brightness of ``original``.
 
-    A numpy port of ``blendmodes.blendLayers(corrected, original, LUMINOSITY)``,
-    operating in non-linear sRGB exactly as that library does.
+    A numpy port of ``blendmodes.blendLayers(corrected, original, LUMINOSITY)``
+    as the webui pins it (blendmodes==2022): float64 in non-linear sRGB, then
+    ``imageFloatToInt`` — clip to [0, 1], times 255, truncated to uint8.
     """
-    bg = corrected_u8.astype(np.float32) / 255.0
-    fg = original_u8.astype(np.float32) / 255.0
+    bg = corrected_u8.astype(np.float64) / 255.0
+    fg = original_u8.astype(np.float64) / 255.0
     out = _set_luma(bg, _luma(fg))
-    return np.rint(out * 255.0).clip(0, 255).astype(np.uint8)
+    return (np.clip(out, 0.0, 1.0) * 255.0).astype(np.uint8)
 
 
 def lab_luminosity_blend(top_u8: np.ndarray, base_u8: np.ndarray) -> np.ndarray:
