@@ -421,9 +421,10 @@ def build_grade_latent(core, pack, out):
         "because the model put it there, not because a filter pushed it.\n\n"
         "No input image is needed — this generates from the prompt, so it runs "
         "straight away.\n\n"
-        "Compare by bypassing the latent node with **Ctrl+B**. The image node "
-        "downstream has the same wheels, so you can also set the same grade in "
-        "both places and see how differently they land.\n\n"
+        "The lower sampler renders the same seed on the **ungraded** model, and "
+        "the image node grades that render afterwards. Set the same wheels on both "
+        "grade nodes to see how differently a grade lands when the model composes "
+        "in it and when it is laid over a finished picture.\n\n"
         "`strength` scales the whole grade; `start_percent` / `end_percent` "
         "limit it to part of the schedule.",
         (-520, 40), (460, 430))
@@ -446,9 +447,20 @@ def build_grade_latent(core, pack, out):
     save = w.add(core["SaveImage"], "SaveImage", (1080, 490), size=(380, 380),
                  title="Graded while sampling")
 
+    # The post-pass needs a render that was NOT graded while sampling. It used to
+    # take the graded decode, so with any real grade it showed the wheels applied
+    # twice — invisible only while every wheel sat at its neutral default.
+    ks_plain = w.add(core["KSampler"], "KSampler", (400, 720),
+                     {"steps": 26, "cfg": 6.5, "sampler_name": "dpmpp_2m",
+                      "scheduler": "karras", "denoise": 1.0}, (320, 280),
+                     "Same seed, ungraded model")
+    dec_plain = w.add(core["VAEDecode"], "VAEDecode", (760, 720), size=(240, 60))
+    plain_out = w.add(core["PreviewImage"], "PreviewImage", (760, 810), size=(300, 300),
+                      title="No grade")
     post = w.add(pack["ImageColorGrade"], "ImageColorGrade", (1080, 40), size=(640, 300),
                  title="The same wheels, applied afterwards")
-    post_out = w.add(core["PreviewImage"], "PreviewImage", (1760, 40), size=(320, 300))
+    post_out = w.add(core["PreviewImage"], "PreviewImage", (1760, 40), size=(320, 300),
+                     title="Graded afterwards")
 
     w.link(ckpt, 0, grade, "model")
     w.link(grade, 0, ks, "model")
@@ -460,7 +472,15 @@ def build_grade_latent(core, pack, out):
     w.link(ks, 0, dec, "samples")
     w.link(ckpt, 2, dec, "vae")
     w.link(dec, 0, save, "images")
-    w.link(dec, 0, post, "image")
+
+    w.link(ckpt, 0, ks_plain, "model")
+    w.link(pos, 0, ks_plain, "positive")
+    w.link(neg, 0, ks_plain, "negative")
+    w.link(empty, 0, ks_plain, "latent_image")
+    w.link(ks_plain, 0, dec_plain, "samples")
+    w.link(ckpt, 2, dec_plain, "vae")
+    w.link(dec_plain, 0, plain_out, "images")
+    w.link(dec_plain, 0, post, "image")
     w.link(post, 0, post_out, "images")
     w.dump(os.path.join(out, "06_grade_while_sampling.json"))
 

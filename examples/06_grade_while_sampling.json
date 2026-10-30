@@ -1,8 +1,8 @@
 {
  "id": "06_grade_while_sampling",
  "revision": 0,
- "last_node_id": 11,
- "last_link_id": 12,
+ "last_node_id": 14,
+ "last_link_id": 19,
  "nodes": [
   {
    "id": 1,
@@ -23,7 +23,7 @@
    "title": "Read me",
    "properties": {},
    "widgets_values": [
-    "## Grading during sampling\n\nThe wheels on the **latent** node change the model's own prediction at every step, so the picture is *composed* in the graded look instead of having it laid over the top. Shadows get the colour you asked for because the model put it there, not because a filter pushed it.\n\nNo input image is needed — this generates from the prompt, so it runs straight away.\n\nCompare by bypassing the latent node with **Ctrl+B**. The image node downstream has the same wheels, so you can also set the same grade in both places and see how differently they land.\n\n`strength` scales the whole grade; `start_percent` / `end_percent` limit it to part of the schedule."
+    "## Grading during sampling\n\nThe wheels on the **latent** node change the model's own prediction at every step, so the picture is *composed* in the graded look instead of having it laid over the top. Shadows get the colour you asked for because the model put it there, not because a filter pushed it.\n\nNo input image is needed — this generates from the prompt, so it runs straight away.\n\nThe lower sampler renders the same seed on the **ungraded** model, and the image node grades that render afterwards. Set the same wheels on both grade nodes to see how differently a grade lands when the model composes in it and when it is laid over a finished picture.\n\n`strength` scales the whole grade; `start_percent` / `end_percent` limit it to part of the schedule."
    ],
    "color": "#432",
    "bgcolor": "#653"
@@ -59,7 +59,8 @@
      "name": "MODEL",
      "type": "MODEL",
      "links": [
-      1
+      1,
+      11
      ]
     },
     {
@@ -76,7 +77,8 @@
      "name": "VAE",
      "type": "VAE",
      "links": [
-      9
+      9,
+      16
      ]
     }
    ],
@@ -136,7 +138,8 @@
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      7
+      7,
+      14
      ]
     }
    ],
@@ -186,7 +189,8 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      5
+      5,
+      12
      ]
     }
    ],
@@ -235,7 +239,8 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      6
+      6,
+      13
      ]
     }
    ],
@@ -613,8 +618,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      10,
-      11
+      10
      ]
     }
    ],
@@ -672,6 +676,204 @@
   },
   {
    "id": 10,
+   "type": "KSampler",
+   "pos": [
+    400,
+    720
+   ],
+   "size": [
+    320,
+    280
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 11
+    },
+    {
+     "localized_name": "seed",
+     "name": "seed",
+     "type": "INT",
+     "widget": {
+      "name": "seed"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "steps",
+     "name": "steps",
+     "type": "INT",
+     "widget": {
+      "name": "steps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "cfg",
+     "name": "cfg",
+     "type": "FLOAT",
+     "widget": {
+      "name": "cfg"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sampler_name",
+     "name": "sampler_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "sampler_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scheduler",
+     "name": "scheduler",
+     "type": "COMBO",
+     "widget": {
+      "name": "scheduler"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "positive",
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 12
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 13
+    },
+    {
+     "localized_name": "latent_image",
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 14
+    },
+    {
+     "localized_name": "denoise",
+     "name": "denoise",
+     "type": "FLOAT",
+     "widget": {
+      "name": "denoise"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      15
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    0,
+    "fixed",
+    26,
+    6.5,
+    "dpmpp_2m",
+    "karras",
+    1.0
+   ],
+   "title": "Same seed, ungraded model"
+  },
+  {
+   "id": 11,
+   "type": "VAEDecode",
+   "pos": [
+    760,
+    720
+   ],
+   "size": [
+    240,
+    60
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "samples",
+     "name": "samples",
+     "type": "LATENT",
+     "link": 15
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 16
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      17,
+      18
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 12,
+   "type": "PreviewImage",
+   "pos": [
+    760,
+    810
+   ],
+   "size": [
+    300,
+    300
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 17
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "title": "No grade"
+  },
+  {
+   "id": 13,
    "type": "ImageColorGrade",
    "pos": [
     1080,
@@ -682,14 +884,14 @@
     300
    ],
    "flags": {},
-   "order": 9,
+   "order": 12,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "image",
      "name": "image",
      "type": "IMAGE",
-     "link": 11
+     "link": 18
     },
     {
      "localized_name": "lift_r",
@@ -838,7 +1040,7 @@
      "name": "image",
      "type": "IMAGE",
      "links": [
-      12
+      19
      ]
     }
    ],
@@ -864,7 +1066,7 @@
    "title": "The same wheels, applied afterwards"
   },
   {
-   "id": 11,
+   "id": 14,
    "type": "PreviewImage",
    "pos": [
     1760,
@@ -875,14 +1077,14 @@
     300
    ],
    "flags": {},
-   "order": 10,
+   "order": 13,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "images",
      "name": "images",
      "type": "IMAGE",
-     "link": 12
+     "link": 19
     }
    ],
    "outputs": [
@@ -896,7 +1098,8 @@
    "properties": {
     "Node name for S&R": "PreviewImage"
    },
-   "widgets_values": []
+   "widgets_values": [],
+   "title": "Graded afterwards"
   }
  ],
  "links": [
@@ -982,17 +1185,73 @@
   ],
   [
    11,
-   8,
+   2,
    0,
    10,
+   0,
+   "MODEL"
+  ],
+  [
+   12,
+   4,
+   0,
+   10,
+   6,
+   "CONDITIONING"
+  ],
+  [
+   13,
+   5,
+   0,
+   10,
+   7,
+   "CONDITIONING"
+  ],
+  [
+   14,
+   3,
+   0,
+   10,
+   8,
+   "LATENT"
+  ],
+  [
+   15,
+   10,
+   0,
+   11,
+   0,
+   "LATENT"
+  ],
+  [
+   16,
+   2,
+   2,
+   11,
+   1,
+   "VAE"
+  ],
+  [
+   17,
+   11,
+   0,
+   12,
    0,
    "IMAGE"
   ],
   [
-   12,
-   10,
-   0,
+   18,
    11,
+   0,
+   13,
+   0,
+   "IMAGE"
+  ],
+  [
+   19,
+   13,
+   0,
+   14,
    0,
    "IMAGE"
   ]

@@ -419,6 +419,76 @@ def test_the_hook_converges_instead_of_compounding():
     print(f"  steps {steps[0]:.3f} -> {steps[3]:.3f} -> {steps[-1]:.5f}")
 
 
+def test_saturation_converges_instead_of_compounding():
+    """The test above, with the one control it never exercised.
+
+    Saturation was applied as a factor on every call, so it compounded while
+    the levels converged. On SDXL a 1.15 latent grade raised the finished
+    image's colour 3.2-fold and turned a dusk street neon; the same grade
+    applied afterwards raises it 1.4-fold. A model that keeps everything it is
+    given is the worst case: here the colour must settle near 1.15 times the
+    first prediction's, and each call must ask for less than the one before.
+    """
+    N = _node_module()
+    space = _space()
+    corrector = N.GradeCorrector(space, G.Grade(saturation=1.15), 0.5)
+
+    def colour(latent):
+        # measured here, independently of the code under test: mean |rgb - grey|
+        rgb = G.to_unit(space.forward(latent))
+        grey = (rgb * torch.tensor([0.2126, 0.7152, 0.0722]).view(1, 3, 1, 1)).sum(1, keepdim=True)
+        return float((rgb - grey).abs().mean())
+
+    x = torch.randn(1, 4, 32, 32)
+    start = colour(x)
+    steps = []
+    for i in range(17):
+        nxt = corrector(x, 10.0 - i * 0.5)
+        steps.append(float((nxt - x).abs().mean()))
+        x = nxt
+    end = colour(x)
+
+    ratio = end / start
+    assert 1.05 < ratio < 1.25, f"colour went x{ratio:.2f}; 1.15 was asked for"
+    assert steps[-1] < steps[0] * 0.05, steps
+    print(f"  colour x{ratio:.3f} after 17 calls (asked 1.15); "
+          f"step {steps[0]:.4f} -> {steps[-1]:.6f}")
+
+
+def test_neutral_wheels_with_an_anchor_still_patch_the_model():
+    """An anchor aims the grade at its levels, so it acts even with every wheel
+    at neutral. The node returned the model untouched in that case — the anchor
+    did nothing at all — while ImageColorGrade, testing its reference the same
+    way, always worked."""
+    N = _node_module()
+    controls = {k: v for k, v in N.LatentColorGrade.INPUT_TYPES()["required"].items()}
+    neutral = {name: spec[1]["default"] for name, spec in controls.items()
+               if name not in ("model", "strength", "start_percent", "end_percent")}
+
+    class ReachedThePatch(Exception):
+        pass
+
+    class Model:
+        def get_model_object(self, name):
+            raise ReachedThePatch(name)
+
+    original = N.glue.detach
+    N.glue.detach = lambda model, key=None: "left untouched"
+    try:
+        node = N.LatentColorGrade()
+        unanchored = node.apply(Model(), 0.5, 0.3, 1.0, **neutral)[0]
+        assert unanchored == "left untouched", "neutral and unanchored must be a no-op"
+        try:
+            node.apply(Model(), 0.5, 0.3, 1.0, anchor={"samples": torch.zeros(1, 4, 8, 8)},
+                       **neutral)
+        except ReachedThePatch:
+            pass
+        else:
+            raise AssertionError("neutral wheels with an anchor left the model untouched")
+    finally:
+        N.glue.detach = original
+
+
 def test_state_is_dropped_when_a_new_run_starts():
     """ComfyUI hands back the same patched model while the inputs are
     unchanged, so one seed's targets must not steer the next."""

@@ -145,12 +145,35 @@ def apply_grade(rgb: torch.Tensor, grade: Grade) -> torch.Tensor:
         out = (out - grade.pivot) * grade.contrast + grade.pivot
 
     if grade.saturation != 1.0:
-        weights = torch.tensor(_LUMA, device=rgb.device, dtype=rgb.dtype)
-        weights = weights.reshape([1, 3] + [1] * (rgb.ndim - 2))
-        luma = (out * weights).sum(dim=1, keepdim=True)
+        luma = _luma(out)
         out = luma + (out - luma) * grade.saturation
 
     return out
+
+
+def _luma(rgb: torch.Tensor) -> torch.Tensor:
+    """Each pixel's own grey (Rec.709), channel axis 1, kept as a channel of one."""
+    weights = torch.tensor(_LUMA, device=rgb.device, dtype=rgb.dtype)
+    weights = weights.reshape([1, 3] + [1] * (rgb.ndim - 2))
+    return (rgb * weights).sum(dim=1, keepdim=True)
+
+
+def chroma_level(rgb: torch.Tensor) -> torch.Tensor:
+    """How colourful each image is: the mean distance of its pixels from their own grey.
+
+    Returns ``[B]``. Saturation is a ratio of this, which lets the latent grade
+    hold a target colourfulness instead of multiplying the colour again on every
+    sampler call — that compounded, and about seventeen calls turned 1.15 into
+    a three-fold rise and a neon frame.
+    """
+    return (rgb - _luma(rgb)).abs().flatten(1).mean(dim=1)
+
+
+def scale_chroma(rgb: torch.Tensor, factor: torch.Tensor) -> torch.Tensor:
+    """Move every pixel away from its own grey by ``factor``, one per batch item."""
+    luma = _luma(rgb)
+    factor = factor.to(rgb.dtype).reshape([-1] + [1] * (rgb.ndim - 1))
+    return luma + (rgb - luma) * factor
 
 
 def grade_unit_range(rgb: torch.Tensor, grade: Grade) -> torch.Tensor:

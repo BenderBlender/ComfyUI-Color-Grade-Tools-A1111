@@ -379,6 +379,78 @@ def test_covariance_refuses_per_frame_reduction():
     raise AssertionError("per-frame covariance should have been refused")
 
 
+def test_attach_says_so_when_a_run_never_enters_the_window():
+    """A run that starts below the window must warn once instead of staying silent.
+
+    The window is absolute on the model's schedule (ComfyUI's convention, as for
+    ControlNet). Measured 30.10 on SDXL: with end_percent 0.9 a denoise-0.3 img2img
+    starts at sigma 0.334, under the window's lower edge 0.344, and the guidance did
+    nothing at all — noticed only because its output matched an unguided run to two
+    decimals. Whether attach takes the predict_noise wrapper (ComfyUI importable, as
+    under the portable install's own python) or the post-CFG fallback (plain python),
+    both go through the same correct(), and the fake model offers both.
+    """
+    from a1111_cc import glue
+
+    class Model:
+        def __init__(self):
+            self.model_options = {}
+            self.wrapper = None
+
+        def clone(self):
+            twin = Model()
+            twin.model_options = dict(self.model_options)
+            return twin
+
+        def remove_wrappers_with_key(self, wrapper_type, key):
+            self.wrapper = None
+
+        def add_wrapper_with_key(self, wrapper_type, key, fn):
+            self.wrapper = fn
+
+        def set_model_sampler_post_cfg_function(self, fn):
+            self.model_options.setdefault("sampler_post_cfg_function", []).append(fn)
+
+    class Corrector:
+        def __init__(self):
+            self.calls, self.warnings = 0, []
+
+        def __call__(self, x0):
+            self.calls += 1
+            return x0 * 0.5
+
+        def warn_once(self, key, msg, *args):
+            self.warnings.append(key)
+
+    x0 = torch.ones(1, 4, 8, 8)
+
+    def step(patched, sigma):
+        if patched.wrapper is not None:     # predict_noise(x, timestep): timestep is sigma
+            return patched.wrapper(lambda *args, **kwargs: x0, x0, torch.tensor([sigma]))
+        hook = patched.model_options["sampler_post_cfg_function"][-1]
+        return hook({"denoised": x0, "sigma": torch.tensor([sigma])})
+
+    # SDXL, start 0.15 / end 0.9 -> sigma 6.448 .. 0.344; the denoise-0.3 run of 24 steps
+    corrector = Corrector()
+    patched = glue.attach(Model(), corrector, 6.448, 0.344)
+    for sigma in (0.334, 0.2, 0.1, 0.03):
+        assert torch.equal(step(patched, sigma), x0), "a step outside the window was changed"
+    assert corrector.calls == 0
+    assert corrector.warnings == ["below-window"], corrector.warnings
+
+    # a run that starts inside the window corrects inside it and says nothing
+    corrector = Corrector()
+    patched = glue.attach(Model(), corrector, 6.448, 0.344)
+    for sigma in (3.7, 1.2, 0.5, 0.2):
+        step(patched, sigma)
+    assert corrector.calls == 3 and corrector.warnings == []
+
+    # and a second low run after it is recognised as a new run and warned about
+    for sigma in (0.334, 0.1):
+        step(patched, sigma)
+    assert corrector.warnings == ["below-window"], corrector.warnings
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

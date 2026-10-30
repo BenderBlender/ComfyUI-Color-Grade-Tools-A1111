@@ -115,6 +115,7 @@ class GradeCorrector:
         self.strength = strength
         self._anchor = anchor          # projected reference, or None
         self._targets = None
+        self._target_chroma = None     # held like the levels, worked out with them
         self._last_sigma = None
         self._warned = set()
 
@@ -168,7 +169,18 @@ class GradeCorrector:
                 base = G.to_unit(self._anchor.to(unit.device, unit.dtype))
             else:
                 base = unit
-            self._targets = self._graded(G.channel_levels(base))
+            if self.grade.saturation == 1.0:
+                # per-channel curves commute with percentiles: grade three numbers
+                self._targets = self._graded(G.channel_levels(base))
+            else:
+                # Saturation mixes channels, so grade the base itself and read both
+                # targets off that one picture. Taking the levels from an unsaturated
+                # base and the colour from a saturated one gave two targets that
+                # disagreed — the curve pulled the channels together, the colour
+                # pushed them apart, and the correction never settled.
+                graded = G.apply_grade(base, self.grade)
+                self._targets = G.channel_levels(graded)
+                self._target_chroma = G.chroma_level(graded)
         return self._targets.to(unit.device, unit.dtype), None
 
     def __call__(self, x0, sigma=None):
@@ -192,7 +204,17 @@ class GradeCorrector:
         mapped = G.piecewise_map(unit, current, current + step)
 
         if self.grade.saturation != 1.0:
-            mapped = G.apply_grade(mapped, self.grade.per_pixel())
+            # Saturation used to be applied here as a factor on every call, and it
+            # was the one control that compounded: on SDXL, 26 steps from 30% of the
+            # schedule, 1.15 raised the finished image's colour 3.2-fold. It now
+            # pulls towards a held target, like the levels above.
+            current = G.chroma_level(mapped)
+            target = self._target_chroma.to(current.device, current.dtype)
+            if target.shape[0] == 1 and current.shape[0] > 1:
+                target = target.expand(current.shape[0])
+            wanted = current + (target - current) * self.strength
+            factor = (wanted / current.clamp_min(1e-6)).clamp(0.0, 2.0)
+            mapped = G.scale_chroma(mapped, factor)
 
         delta = self.space.backward_delta(G.from_unit(mapped) - projected)
         if delta.shape != source.shape:
@@ -254,7 +276,11 @@ class LatentColorGrade:
               anchor=None, unique_id=None, **controls):
         key = f"{GRADE_KEY}:{unique_id}" if unique_id is not None else GRADE_KEY
         grade = _grade_from(controls)
-        if strength <= 0.0 or grade.is_neutral() or start_percent >= end_percent:
+        # Neutral wheels with an anchor still do something — they aim the
+        # prediction at the anchor's levels — so only neutral AND unanchored is
+        # a no-op. ImageColorGrade has always tested its reference the same way.
+        if (strength <= 0.0 or start_percent >= end_percent
+                or (grade.is_neutral() and anchor is None)):
             return (glue.detach(model, key=key),)
 
         reference = model.get_model_object("latent_format")

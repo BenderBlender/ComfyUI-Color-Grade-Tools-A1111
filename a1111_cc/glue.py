@@ -157,9 +157,31 @@ def attach(model, corrector, sigma_hi: float, sigma_lo: float, key: str = HOOK_K
     it reaches the same value by a narrower route.
     """
     patched = model.clone()
+    run = {"last": None}
 
     def correct(x0, sigma):
         """Never let a colour correction take the whole render down with it."""
+        # Sigmas fall within a run, so one that jumps back up starts a new run.
+        starting = run["last"] is None or sigma > run["last"] * 1.05
+        run["last"] = sigma
+        if starting and sigma < sigma_lo:
+            # The window is absolute on the model's schedule — ComfyUI's convention,
+            # the same as ControlNet's start/end — so a low-denoise img2img can start
+            # below all of it. With end_percent 0.9 a denoise of 0.3 on SDXL starts at
+            # sigma 0.334 under an edge of 0.344 and not one step is corrected.
+            # Measured the same day: end_percent 1.0 does reach such a run, but buys
+            # little colour there (a*b* distance 0.20 -> 0.16) and halves high-frequency
+            # energy at denoise 0.9, while A1111 Color Correction gets 0.12 for nothing.
+            message = ("latent colour: this run starts at sigma %.3f, already below the "
+                       "window's lower edge %.3f set by end_percent, so it will do nothing. "
+                       "Low-denoise img2img starts that low; for such passes use A1111 "
+                       "Color Correction on the decoded image (end_percent near 1.0 also "
+                       "reaches them, at a cost in fine detail).")
+            warn = getattr(corrector, "warn_once", None)
+            if warn is not None:
+                warn("below-window", message, sigma, sigma_lo)
+            else:
+                log.warning(message, sigma, sigma_lo)
         if not (sigma_lo <= sigma <= sigma_hi) or getattr(x0, "is_nested", False):
             return x0
         try:

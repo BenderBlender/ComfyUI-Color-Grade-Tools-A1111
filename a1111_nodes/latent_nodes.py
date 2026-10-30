@@ -57,7 +57,10 @@ class ApplyLatentColorGuidance:
                 "end_percent": ("FLOAT", {
                     "default": 0.90, "min": 0.0, "max": 1.0, "step": 0.01,
                     "tooltip": "Where to stop. Ending before the last steps lets the model "
-                               "settle detail without the correction nudging it.",
+                               "settle detail without the correction nudging it. Both "
+                               "percents count the model's whole schedule, as ControlNet's "
+                               "do, so a low-denoise img2img that runs only the last steps "
+                               "can miss the window entirely — the console then says so.",
                 }),
                 "method": (METHODS, {"default": "auto", "tooltip": _METHOD_TOOLTIP}),
                 "space": (SPACES, {"default": "auto", "tooltip": _SPACE_TOOLTIP}),
@@ -105,9 +108,17 @@ class ApplyLatentColorGuidance:
         "steps, where the prediction is still featureless. 'space=auto' goes through "
         "the model's own latent-to-RGB matrix, which is what makes the same controls "
         "work on SD1.5, SDXL, SD3, Flux and the video models.\n\n"
+        "LOW DENOISE. The window counts the model's whole schedule, as ControlNet's "
+        "does. An img2img at denoise 0.3 on SDXL (24 karras steps) starts at sigma 0.334, "
+        "already past end_percent 0.9, so not one step is corrected and the console "
+        "warns. The drift is small there anyway; A1111 Color Correction on the decoded "
+        "image holds it.\n\n"
         "ACCURACY. The direction of the change is right everywhere; the exact hue is "
         "approximate, because that matrix is a linear fit to a decoder that is not. "
-        "Finish on an image node when the number matters."
+        "Finish on an image node when the number matters. Holding colour also lowers "
+        "high-frequency energy as denoise rises — on one SDXL test about 6% at 0.5 and "
+        "28% at 0.9 against an unguided run — which may read as softer detail or as "
+        "less grain; judge it by eye."
     )
 
     def apply(self, model, reference_latent, strength, start_percent, end_percent,
