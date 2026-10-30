@@ -1,0 +1,1004 @@
+{
+ "id": "06_grade_while_sampling",
+ "revision": 0,
+ "last_node_id": 11,
+ "last_link_id": 12,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "MarkdownNote",
+   "pos": [
+    -520,
+    40
+   ],
+   "size": [
+    460,
+    430
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "Read me",
+   "properties": {},
+   "widgets_values": [
+    "## Grading during sampling\n\nThe wheels on the **latent** node change the model's own prediction at every step, so the picture is *composed* in the graded look instead of having it laid over the top. Shadows get the colour you asked for because the model put it there, not because a filter pushed it.\n\nNo input image is needed — this generates from the prompt, so it runs straight away.\n\nCompare by bypassing the latent node with **Ctrl+B**. The image node downstream has the same wheels, so you can also set the same grade in both places and see how differently they land.\n\n`strength` scales the whole grade; `start_percent` / `end_percent` limit it to part of the schedule."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 2,
+   "type": "CheckpointLoaderSimple",
+   "pos": [
+    20,
+    40
+   ],
+   "size": [
+    340,
+    100
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "ckpt_name",
+     "name": "ckpt_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "ckpt_name"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "MODEL",
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      1
+     ]
+    },
+    {
+     "localized_name": "CLIP",
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      3,
+      4
+     ]
+    },
+    {
+     "localized_name": "VAE",
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CheckpointLoaderSimple"
+   },
+   "widgets_values": [
+    null
+   ]
+  },
+  {
+   "id": 3,
+   "type": "EmptyLatentImage",
+   "pos": [
+    20,
+    180
+   ],
+   "size": [
+    340,
+    110
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "width",
+     "name": "width",
+     "type": "INT",
+     "widget": {
+      "name": "width"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "height",
+     "name": "height",
+     "type": "INT",
+     "widget": {
+      "name": "height"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "batch_size",
+     "name": "batch_size",
+     "type": "INT",
+     "widget": {
+      "name": "batch_size"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "EmptyLatentImage"
+   },
+   "widgets_values": [
+    1024,
+    1024,
+    1
+   ]
+  },
+  {
+   "id": 4,
+   "type": "CLIPTextEncode",
+   "pos": [
+    20,
+    330
+   ],
+   "size": [
+    340,
+    140
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      5
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "a quiet street at dusk, wet pavement, shop windows, photograph"
+   ],
+   "title": "Positive"
+  },
+  {
+   "id": 5,
+   "type": "CLIPTextEncode",
+   "pos": [
+    20,
+    500
+   ],
+   "size": [
+    340,
+    110
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "text",
+     "name": "text",
+     "type": "STRING",
+     "widget": {
+      "name": "text"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "clip",
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "CONDITIONING",
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      6
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "blurry, low quality"
+   ],
+   "title": "Negative"
+  },
+  {
+   "id": 6,
+   "type": "LatentColorGrade",
+   "pos": [
+    400,
+    40
+   ],
+   "size": [
+    640,
+    320
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 1
+    },
+    {
+     "localized_name": "strength",
+     "name": "strength",
+     "type": "FLOAT",
+     "widget": {
+      "name": "strength"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "start_percent",
+     "name": "start_percent",
+     "type": "FLOAT",
+     "widget": {
+      "name": "start_percent"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "end_percent",
+     "name": "end_percent",
+     "type": "FLOAT",
+     "widget": {
+      "name": "end_percent"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lift_r",
+     "name": "lift_r",
+     "type": "FLOAT",
+     "widget": {
+      "name": "lift_r"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lift_g",
+     "name": "lift_g",
+     "type": "FLOAT",
+     "widget": {
+      "name": "lift_g"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lift_b",
+     "name": "lift_b",
+     "type": "FLOAT",
+     "widget": {
+      "name": "lift_b"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lift_master",
+     "name": "lift_master",
+     "type": "FLOAT",
+     "widget": {
+      "name": "lift_master"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gamma_r",
+     "name": "gamma_r",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gamma_r"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gamma_g",
+     "name": "gamma_g",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gamma_g"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gamma_b",
+     "name": "gamma_b",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gamma_b"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gamma_master",
+     "name": "gamma_master",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gamma_master"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gain_r",
+     "name": "gain_r",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gain_r"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gain_g",
+     "name": "gain_g",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gain_g"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gain_b",
+     "name": "gain_b",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gain_b"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gain_master",
+     "name": "gain_master",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gain_master"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "saturation",
+     "name": "saturation",
+     "type": "FLOAT",
+     "widget": {
+      "name": "saturation"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "contrast",
+     "name": "contrast",
+     "type": "FLOAT",
+     "widget": {
+      "name": "contrast"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "anchor",
+     "name": "anchor",
+     "type": "LATENT",
+     "link": null,
+     "shape": 7
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "links": [
+      2
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LatentColorGrade"
+   },
+   "widgets_values": [
+    0.5,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  {
+   "id": 7,
+   "type": "KSampler",
+   "pos": [
+    400,
+    400
+   ],
+   "size": [
+    320,
+    280
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model",
+     "name": "model",
+     "type": "MODEL",
+     "link": 2
+    },
+    {
+     "localized_name": "seed",
+     "name": "seed",
+     "type": "INT",
+     "widget": {
+      "name": "seed"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "steps",
+     "name": "steps",
+     "type": "INT",
+     "widget": {
+      "name": "steps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "cfg",
+     "name": "cfg",
+     "type": "FLOAT",
+     "widget": {
+      "name": "cfg"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "sampler_name",
+     "name": "sampler_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "sampler_name"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scheduler",
+     "name": "scheduler",
+     "type": "COMBO",
+     "widget": {
+      "name": "scheduler"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "positive",
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 5
+    },
+    {
+     "localized_name": "negative",
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 6
+    },
+    {
+     "localized_name": "latent_image",
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 7
+    },
+    {
+     "localized_name": "denoise",
+     "name": "denoise",
+     "type": "FLOAT",
+     "widget": {
+      "name": "denoise"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "LATENT",
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    0,
+    "fixed",
+    26,
+    6.5,
+    "dpmpp_2m",
+    "karras",
+    1.0
+   ]
+  },
+  {
+   "id": 8,
+   "type": "VAEDecode",
+   "pos": [
+    1080,
+    400
+   ],
+   "size": [
+    240,
+    60
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "samples",
+     "name": "samples",
+     "type": "LATENT",
+     "link": 8
+    },
+    {
+     "localized_name": "vae",
+     "name": "vae",
+     "type": "VAE",
+     "link": 9
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "IMAGE",
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      10,
+      11
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 9,
+   "type": "SaveImage",
+   "pos": [
+    1080,
+    490
+   ],
+   "size": [
+    380,
+    380
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 10
+    },
+    {
+     "localized_name": "filename_prefix",
+     "name": "filename_prefix",
+     "type": "STRING",
+     "widget": {
+      "name": "filename_prefix"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "ComfyUI"
+   ],
+   "title": "Graded while sampling"
+  },
+  {
+   "id": 10,
+   "type": "ImageColorGrade",
+   "pos": [
+    1080,
+    40
+   ],
+   "size": [
+    640,
+    300
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "link": 11
+    },
+    {
+     "localized_name": "lift_r",
+     "name": "lift_r",
+     "type": "FLOAT",
+     "widget": {
+      "name": "lift_r"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lift_g",
+     "name": "lift_g",
+     "type": "FLOAT",
+     "widget": {
+      "name": "lift_g"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lift_b",
+     "name": "lift_b",
+     "type": "FLOAT",
+     "widget": {
+      "name": "lift_b"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "lift_master",
+     "name": "lift_master",
+     "type": "FLOAT",
+     "widget": {
+      "name": "lift_master"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gamma_r",
+     "name": "gamma_r",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gamma_r"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gamma_g",
+     "name": "gamma_g",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gamma_g"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gamma_b",
+     "name": "gamma_b",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gamma_b"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gamma_master",
+     "name": "gamma_master",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gamma_master"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gain_r",
+     "name": "gain_r",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gain_r"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gain_g",
+     "name": "gain_g",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gain_g"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gain_b",
+     "name": "gain_b",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gain_b"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "gain_master",
+     "name": "gain_master",
+     "type": "FLOAT",
+     "widget": {
+      "name": "gain_master"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "saturation",
+     "name": "saturation",
+     "type": "FLOAT",
+     "widget": {
+      "name": "saturation"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "contrast",
+     "name": "contrast",
+     "type": "FLOAT",
+     "widget": {
+      "name": "contrast"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "reference",
+     "name": "reference",
+     "type": "IMAGE",
+     "link": null,
+     "shape": 7
+    },
+    {
+     "localized_name": "mask",
+     "name": "mask",
+     "type": "MASK",
+     "link": null,
+     "shape": 7
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "image",
+     "name": "image",
+     "type": "IMAGE",
+     "links": [
+      12
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ImageColorGrade"
+   },
+   "widgets_values": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "title": "The same wheels, applied afterwards"
+  },
+  {
+   "id": 11,
+   "type": "PreviewImage",
+   "pos": [
+    1760,
+    40
+   ],
+   "size": [
+    320,
+    300
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": []
+  }
+ ],
+ "links": [
+  [
+   1,
+   2,
+   0,
+   6,
+   0,
+   "MODEL"
+  ],
+  [
+   2,
+   6,
+   0,
+   7,
+   0,
+   "MODEL"
+  ],
+  [
+   3,
+   2,
+   1,
+   4,
+   1,
+   "CLIP"
+  ],
+  [
+   4,
+   2,
+   1,
+   5,
+   1,
+   "CLIP"
+  ],
+  [
+   5,
+   4,
+   0,
+   7,
+   6,
+   "CONDITIONING"
+  ],
+  [
+   6,
+   5,
+   0,
+   7,
+   7,
+   "CONDITIONING"
+  ],
+  [
+   7,
+   3,
+   0,
+   7,
+   8,
+   "LATENT"
+  ],
+  [
+   8,
+   7,
+   0,
+   8,
+   0,
+   "LATENT"
+  ],
+  [
+   9,
+   2,
+   2,
+   8,
+   1,
+   "VAE"
+  ],
+  [
+   10,
+   8,
+   0,
+   9,
+   0,
+   "IMAGE"
+  ],
+  [
+   11,
+   8,
+   0,
+   10,
+   0,
+   "IMAGE"
+  ],
+  [
+   12,
+   10,
+   0,
+   11,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}

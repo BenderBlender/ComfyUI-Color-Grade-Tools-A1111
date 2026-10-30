@@ -27,6 +27,8 @@ certain samplers" as a known issue). Three things are different here:
 
 import logging
 
+import torch
+
 from ..a1111_cc import glue
 from ..a1111_cc import grading as G
 
@@ -95,36 +97,112 @@ GRADE_CONTROLS["contrast"] = ("FLOAT", {
 
 
 class GradeCorrector:
-    """Applies a grade to each prediction, in the model's colour subspace."""
+    """Applies a grade to each prediction, in the model's colour subspace.
 
-    def __init__(self, space, grade: G.Grade, strength: float):
+    The targets are worked out **once** and then held. That is what stops the
+    grade compounding: the hook runs on every call the sampler makes, so a
+    correction expressed as "shift by this much" would be applied twenty or
+    fifty times over, and the result would depend on the step count and on
+    whether the sampler evaluates the model once or twice per step. Expressed
+    as "put the shadows here", it converges — once the prediction already sits
+    on the targets it asks for nothing further, and `strength` means how fast
+    to get there rather than how far to go.
+    """
+
+    def __init__(self, space, grade: G.Grade, strength: float, anchor=None):
         self.space = space
         self.grade = grade
         self.strength = strength
+        self._anchor = anchor          # projected reference, or None
+        self._targets = None
+        self._injected = None
+        self._last_sigma = None
         self._warned = set()
+
+    wants_sigma = True
+
+    def _note_sigma(self, sigma):
+        """Forget what we learned when a new run starts.
+
+        Sigma falls through a run. If it jumps back up, the sampler has begun
+        again — and ComfyUI hands back the same patched model whenever the
+        node's inputs have not changed, so without this the targets worked out
+        for one seed would quietly steer the next.
+        """
+        if sigma is None:
+            return
+        if self._last_sigma is not None and sigma > self._last_sigma * 1.05:
+            self._injected = None
+            self._targets = None
+        self._last_sigma = sigma
 
     def warn_once(self, key, msg, *args):
         if key not in self._warned:
             self._warned.add(key)
             log.warning(msg, *args)
 
-    def __call__(self, x0):
+    def _graded(self, levels):
+        shaped = levels.reshape(levels.shape[0], levels.shape[1], 1, 3)
+        return G.apply_grade(shaped, self.grade.tonal()).reshape(levels.shape)
+
+    def _target_levels(self, unit):
+        """Where the shadows, midtones and highlights should end up.
+
+        With a reference the answer is fixed: grade *its* levels, once. Without
+        one there is nothing to measure that the grade has not already touched
+        — and the first prediction is no good as a stand-in, because early in
+        sampling it is blurred and its spread is a fraction of the finished
+        image's, so anchoring to it would squeeze contrast on every step.
+
+        So the correction keeps track of what it has already injected and
+        subtracts it back off, which recovers the levels the model would have
+        produced on its own. If the model keeps our change, the estimate is
+        exact; if it pushes back, we under-correct — the safe direction.
+        """
+        if self._anchor is not None:
+            if self._targets is None:
+                anchor = G.to_unit(self._anchor.to(unit.device, unit.dtype))
+                self._targets = self._graded(G.channel_levels(anchor))
+            return self._targets.to(unit.device, unit.dtype), None
+
+        current = G.channel_levels(unit)
+        if self._injected is None or self._injected.shape != current.shape:
+            self._injected = torch.zeros_like(current)
+        ungraded = current - self._injected.to(current.device, current.dtype)
+        return self._graded(ungraded), current
+
+    def __call__(self, x0, sigma=None):
+        self._note_sigma(sigma)
         if x0.ndim not in (4, 5) or x0.shape[1] != self.space.channels:
-            self.warn_once("shape", "Latent Color Grade: skipping a %s prediction",
+            self.warn_once("shape", "ColorKit Grade: skipping a %s prediction",
                            tuple(x0.shape))
             return x0
 
         source = x0.float()
         projected = self.space.forward(source)
-        graded = G.grade_unit_range(projected, self.grade)
+        unit = G.to_unit(projected)
 
-        delta = self.space.backward_delta(graded - projected)
+        targets, current = self._target_levels(unit)
+        if current is None:
+            current = G.channel_levels(unit)
+        if targets.shape[0] == 1 and current.shape[0] > 1:
+            targets = targets.expand(current.shape[0], -1, -1)
+
+        step = (targets - current) * self.strength
+        mapped = G.piecewise_map(unit, current, current + step)
+        if self._anchor is None:
+            self._injected = self._injected + step
+
+        if self.grade.saturation != 1.0:
+            mapped = G.apply_grade(mapped, self.grade.per_pixel())
+
+        delta = self.space.backward_delta(G.from_unit(mapped) - projected)
         if delta.shape != source.shape:
-            self.warn_once("delta", "Latent Color Grade: correction came back as %s "
+            self.warn_once("delta", "ColorKit Grade: correction came back as %s "
                                     "for a %s prediction; skipping.",
                            tuple(delta.shape), tuple(source.shape))
             return x0
-        return (source + self.strength * delta).to(x0.dtype)
+        return (source + delta).to(x0.dtype)
 
 
 class LatentColorGrade:
@@ -135,28 +213,46 @@ class LatentColorGrade:
         required = {
             "model": ("MODEL",),
             "strength": ("FLOAT", {
-                "default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05,
-                "tooltip": "How much of the grade reaches each prediction.",
+                "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
+                "tooltip": "How quickly the prediction is brought to the graded "
+                           "levels. The grade converges rather than piling up, so "
+                           "this is a rate, not an amount: 1.0 snaps there on every "
+                           "call, lower lets the model meet it half way.",
             }),
             "start_percent": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
             "end_percent": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
         }
         required.update(GRADE_CONTROLS)
-        return {"required": required}
+        return {
+            "required": required,
+            "optional": {
+                "anchor": ("LATENT", {
+                    "tooltip": "Optional. With a latent here the grade aims at its "
+                               "levels instead of the model's own — the img2img source "
+                               "is the natural choice. Without it the correction works "
+                               "out its own target as it goes.",
+                }),
+            },
+            # Each node gets its own hook, so two grades in a chain stack
+            # instead of the second quietly lifting the first.
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
 
     RETURN_TYPES = ("MODEL",)
     RETURN_NAMES = ("model",)
     FUNCTION = "apply"
-    CATEGORY = "model_patches/sampling"
+    CATEGORY = "ColorKit/model"
     DESCRIPTION = (
         "Lift, gamma and gain applied to the model's own prediction, so the image is "
         "composed in the graded look. Works with any sampler and any model family."
     )
 
-    def apply(self, model, strength, start_percent, end_percent, **controls):
+    def apply(self, model, strength, start_percent, end_percent,
+              anchor=None, unique_id=None, **controls):
+        key = f"{GRADE_KEY}:{unique_id}" if unique_id is not None else GRADE_KEY
         grade = _grade_from(controls)
         if strength <= 0.0 or grade.is_neutral() or start_percent >= end_percent:
-            return (glue.detach(model, key=GRADE_KEY),)
+            return (glue.detach(model, key=key),)
 
         reference = model.get_model_object("latent_format")
         channels = getattr(reference, "latent_channels", 4) or 4
@@ -165,11 +261,16 @@ class LatentColorGrade:
         if space.kind == "raw":
             log.warning("Latent Color Grade: this model has no latent-to-RGB matrix, so "
                         "the wheels have no colour axes to work in; leaving it unpatched.")
-            return (glue.detach(model, key=GRADE_KEY),)
+            return (glue.detach(model, key=key),)
+
+        projected_anchor = None
+        if anchor is not None:
+            samples = glue.fit_reference_dims(model, anchor["samples"])
+            projected_anchor = space.forward(glue.to_model_space(model, samples).float())
 
         sigma_hi, sigma_lo = glue.sigma_window(model, start_percent, end_percent)
-        corrector = GradeCorrector(space, grade, float(strength))
-        return (glue.attach(model, corrector, sigma_hi, sigma_lo, key=GRADE_KEY),)
+        corrector = GradeCorrector(space, grade, float(strength), projected_anchor)
+        return (glue.attach(model, corrector, sigma_hi, sigma_lo, key=key),)
 
 
 def _probe_latent(model, channels):
@@ -188,23 +289,43 @@ class ImageColorGrade:
     def INPUT_TYPES(cls):
         required = {"image": ("IMAGE",)}
         required.update(GRADE_CONTROLS)
-        return {"required": required, "optional": {"mask": ("MASK",)}}
+        return {
+            "required": required,
+            "optional": {
+                "reference": ("IMAGE", {
+                    "tooltip": "Optional. With a picture here the wheels stop being "
+                               "absolute and start from its look instead: the image is "
+                               "mapped onto the reference's shadows, midtones and "
+                               "highlights, and the wheels then move those. Leave it "
+                               "empty to grade the image on its own terms.",
+                }),
+                "mask": ("MASK",),
+            },
+        }
 
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "apply"
-    CATEGORY = "image/color"
-    DESCRIPTION = "Lift, gamma and gain on an image, with the usual colourist's controls."
+    CATEGORY = "ColorKit/image"
+    DESCRIPTION = (
+        "Lift, gamma and gain on an image, with the usual colourist's controls. "
+        "Connect a reference picture to pick up its look and adjust from there."
+    )
 
-    def apply(self, image, mask=None, **controls):
+    def apply(self, image, reference=None, mask=None, **controls):
         import torch
 
         grade = _grade_from(controls)
-        if grade.is_neutral():
+        if grade.is_neutral() and reference is None:
             return (image,)
 
-        source = image.detach().float().movedim(-1, 1)[:, :3]
-        graded = G.apply_grade(source.clamp(0.0, 1.0), grade).clamp(0.0, 1.0)
+        source = image.detach().float().movedim(-1, 1)[:, :3].clamp(0.0, 1.0)
+        if reference is None:
+            graded = G.apply_grade(source, grade)
+        else:
+            anchor = reference.detach().float().movedim(-1, 1)[:, :3].clamp(0.0, 1.0)
+            graded = G.grade_levels(source, grade, anchor)
+        graded = graded.clamp(0.0, 1.0)
 
         if mask is not None:
             weights = mask.detach().float()
@@ -229,6 +350,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LatentColorGrade": "Latent Color Grade (wheels)",
-    "ImageColorGrade": "Image Color Grade (wheels)",
+    "LatentColorGrade": "ColorKit Grade — latent (wheels)",
+    "ImageColorGrade": "ColorKit Grade — image (wheels)",
 }

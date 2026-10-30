@@ -91,7 +91,7 @@ class ApplyLatentColorGuidance:
     RETURN_TYPES = ("MODEL",)
     RETURN_NAMES = ("model",)
     FUNCTION = "apply"
-    CATEGORY = "model_patches/sampling"
+    CATEGORY = "ColorKit/model"
     DESCRIPTION = (
         "Patch a model so that, while it samples, each prediction is pulled towards a "
         "reference latent's colours. Works with any sampler and any model family."
@@ -158,7 +158,7 @@ class LatentColorMatch:
     RETURN_TYPES = ("LATENT",)
     RETURN_NAMES = ("samples",)
     FUNCTION = "apply"
-    CATEGORY = "latent/advanced"
+    CATEGORY = "ColorKit/latent"
     DESCRIPTION = (
         "Pull a latent's colours onto a reference latent in a single step — before "
         "sampling to steer an img2img pass, or after it to correct the result."
@@ -216,6 +216,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ApplyLatentColorGuidance": "Apply Latent Color Guidance",
-    "LatentColorMatch": "Latent Color Match",
+    "ApplyLatentColorGuidance": "ColorKit Latent Color Guidance",
+    "LatentColorMatch": "ColorKit Latent Color Match",
 }

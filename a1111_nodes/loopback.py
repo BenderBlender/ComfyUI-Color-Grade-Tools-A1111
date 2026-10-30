@@ -145,7 +145,7 @@ class A1111Loopback:
     RETURN_TYPES = ("IMAGE", "IMAGE")
     RETURN_NAMES = ("all_passes", "final")
     FUNCTION = "run"
-    CATEGORY = "sampling"
+    CATEGORY = "ColorKit/sampling"
     DESCRIPTION = (
         "Automatic1111's Loopback: a chain of img2img passes, each corrected back to the "
         "colours of the original image, so the palette holds however long the chain runs."
@@ -324,5 +324,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "A1111Loopback": "A1111 Loopback (Color Corrected)",
+    "A1111Loopback": "ColorKit A1111 Loopback",
 }

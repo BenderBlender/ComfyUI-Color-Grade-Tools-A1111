@@ -163,6 +163,10 @@ def attach(model, corrector, sigma_hi: float, sigma_lo: float, key: str = HOOK_K
         if not (sigma_lo <= sigma <= sigma_hi) or getattr(x0, "is_nested", False):
             return x0
         try:
+            # Some correctors need to know where in the schedule they are —
+            # a sigma that jumps back up means a new run has started.
+            if getattr(corrector, "wants_sigma", False):
+                return corrector(x0, sigma)
             return corrector(x0)
         except Exception as exc:  # noqa: BLE001 - a render in progress is worth more
             warn = getattr(corrector, "warn_once", None)

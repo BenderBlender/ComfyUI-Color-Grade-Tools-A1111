@@ -94,7 +94,7 @@ class A1111ColorCorrection:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "apply"
-    CATEGORY = "image/color"
+    CATEGORY = "ColorKit/image"
     DESCRIPTION = (
         "Automatic1111-style img2img colour correction: LAB histogram matching against a "
         "reference image, blended back so the generated image keeps its own brightness."
@@ -165,5 +165,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "A1111ColorCorrection": "A1111 Color Correction (img2img)",
+    "A1111ColorCorrection": "ColorKit A1111 Color Correction",
 }

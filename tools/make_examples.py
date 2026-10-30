@@ -330,6 +330,91 @@ def build_loopback(core, pack, out):
     w.dump(os.path.join(out, "04_a1111_loopback.json"))
 
 
+def build_grade_image(core, pack, out):
+    """The quickest way to feel the wheels: no model, no sampling."""
+    w = Workflow()
+    w.note(
+        "## Start here\n\n"
+        "Load a picture, turn the wheels, queue. Nothing is sampled and no "
+        "checkpoint is loaded, so the result comes back immediately — this is "
+        "the fastest way to learn what each wheel does.\n\n"
+        "**Lift** moves the shadows and leaves white alone. **Gain** moves the "
+        "highlights and leaves black alone. **Gamma** bends everything in "
+        "between. The bar under each disc is that range's brightness.\n\n"
+        "Drag the handle — it moves *with* the pointer rather than jumping to "
+        "it, so small corrections are possible. Hold **Shift** for fine "
+        "control, **Alt-click** to reset one wheel.\n\n"
+        "Right-click the node for presets, and for saving the current settings "
+        "as one of your own.",
+        (-520, 40), (460, 400))
+
+    load = w.add(core["LoadImage"], "LoadImage", (20, 40), size=(340, 320))
+    grade = w.add(pack["ImageColorGrade"], "ImageColorGrade", (400, 40), size=(640, 300))
+    before = w.add(core["PreviewImage"], "PreviewImage", (1080, 40), size=(320, 300),
+                   title="Before")
+    after = w.add(core["SaveImage"], "SaveImage", (1080, 360), size=(380, 400),
+                  title="After")
+
+    w.link(load, 0, grade, "image")
+    w.link(load, 0, before, "images")
+    w.link(grade, 0, after, "images")
+    w.dump(os.path.join(out, "05_grade_an_image.json"))
+
+
+def build_grade_latent(core, pack, out):
+    """Grading while the image is made, with the post-pass alongside."""
+    w = Workflow()
+    w.note(
+        "## Grading during sampling\n\n"
+        "The wheels on the **latent** node change the model's own prediction at "
+        "every step, so the picture is *composed* in the graded look instead of "
+        "having it laid over the top. Shadows get the colour you asked for "
+        "because the model put it there, not because a filter pushed it.\n\n"
+        "No input image is needed — this generates from the prompt, so it runs "
+        "straight away.\n\n"
+        "Compare by bypassing the latent node with **Ctrl+B**. The image node "
+        "downstream has the same wheels, so you can also set the same grade in "
+        "both places and see how differently they land.\n\n"
+        "`strength` scales the whole grade; `start_percent` / `end_percent` "
+        "limit it to part of the schedule.",
+        (-520, 40), (460, 430))
+
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    empty = w.add(core["EmptyLatentImage"], "EmptyLatentImage", (20, 180),
+                  {"width": 1024, "height": 1024}, (340, 110))
+    pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (20, 330),
+                {"text": "a quiet street at dusk, wet pavement, shop windows, photograph"},
+                (340, 140), "Positive")
+    neg = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (20, 500),
+                {"text": "blurry, low quality"}, (340, 110), "Negative")
+
+    grade = w.add(pack["LatentColorGrade"], "LatentColorGrade", (400, 40), size=(640, 320))
+    ks = w.add(core["KSampler"], "KSampler", (400, 400),
+               {"steps": 26, "cfg": 6.5, "sampler_name": "dpmpp_2m",
+                "scheduler": "karras", "denoise": 1.0}, (320, 280))
+    dec = w.add(core["VAEDecode"], "VAEDecode", (1080, 400), size=(240, 60))
+    save = w.add(core["SaveImage"], "SaveImage", (1080, 490), size=(380, 380),
+                 title="Graded while sampling")
+
+    post = w.add(pack["ImageColorGrade"], "ImageColorGrade", (1080, 40), size=(640, 300),
+                 title="The same wheels, applied afterwards")
+    post_out = w.add(core["PreviewImage"], "PreviewImage", (1760, 40), size=(320, 300))
+
+    w.link(ckpt, 0, grade, "model")
+    w.link(grade, 0, ks, "model")
+    w.link(ckpt, 1, pos, "clip")
+    w.link(ckpt, 1, neg, "clip")
+    w.link(pos, 0, ks, "positive")
+    w.link(neg, 0, ks, "negative")
+    w.link(empty, 0, ks, "latent_image")
+    w.link(ks, 0, dec, "samples")
+    w.link(ckpt, 2, dec, "vae")
+    w.link(dec, 0, save, "images")
+    w.link(dec, 0, post, "image")
+    w.link(post, 0, post_out, "images")
+    w.dump(os.path.join(out, "06_grade_while_sampling.json"))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--comfy", required=True)
@@ -356,6 +441,8 @@ def main():
     build_guidance(core, pack, out)
     build_both(core, pack, out)
     build_loopback(core, pack, out)
+    build_grade_image(core, pack, out)
+    build_grade_latent(core, pack, out)
 
 
 if __name__ == "__main__":

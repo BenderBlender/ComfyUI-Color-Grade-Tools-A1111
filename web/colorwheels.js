@@ -1,48 +1,58 @@
-// Three colour wheels for the grading nodes, drawn on the node itself.
+// A grading panel on the node: three large wheels, laid out the way a
+// colourist expects them.
 //
-// The numbers behind them are ordinary FLOAT widgets (lift_r, lift_g, lift_b,
-// lift_master and so on), so the nodes stay usable with this file absent or
-// blocked — the wheels are a way to reach those numbers, not a replacement
-// for them. Dragging a handle writes into the three channel widgets; the ring
-// under each disc is its master.
+// The numbers behind the wheels are ordinary FLOAT widgets (lift_r, lift_g,
+// lift_b, lift_master and so on), so the nodes stay usable with this file
+// absent or blocked — the panel is a way to reach those numbers, not a
+// replacement for them.
 //
-// The mapping matches a1111_cc/grading.py exactly: red to the right, green at
-// 120 degrees counter-clockwise, blue at 240, and the mean taken out so the
-// disc only ever changes hue while the ring handles brightness.
+// Dragging is relative, as it is in a grading suite: the handle moves with
+// the pointer rather than jumping under it, which is the only way to make a
+// small adjustment to a value that is already set. Hold Shift for a fifth of
+// the sensitivity. Near the centre the handle snaps to neutral, so "no
+// change" is a value you can actually return to.
+//
+// The geometry matches a1111_cc/grading.py exactly — red to the right, green
+// at 120 degrees counter-clockwise, blue at 240, with the mean taken out so
+// the disc only changes hue and the bar underneath handles brightness.
+// tests/test_grading.py checks the two against each other.
 
 import { app } from "../../scripts/app.js";
 
 const NODES = ["LatentColorGrade", "ImageColorGrade"];
 const WHEELS = [
-  { name: "lift", label: "Lift", hint: "shadows", centre: 0.0 },
-  { name: "gamma", label: "Gamma", hint: "midtones", centre: 1.0 },
-  { name: "gain", label: "Gain", hint: "highlights", centre: 1.0 },
+  { name: "lift", label: "LIFT", hint: "shadows", centre: 0.0 },
+  { name: "gamma", label: "GAMMA", hint: "midtones", centre: 1.0 },
+  { name: "gain", label: "GAIN", hint: "highlights", centre: 1.0 },
 ];
 const CHANNELS = ["r", "g", "b"];
-const SPAN = 0.5;          // the range the channel widgets accept
+const SPAN = 0.5;
 const TAU = Math.PI * 2;
 
-const DISC_MIN = 74;
-const DISC_MAX = 128;
-const GAP = 12;
-const LABEL_H = 18;
-const RING_H = 20;
-const READOUT_H = 15;
-const PAD = 8;
+const DISC_MIN = 150;
+const DISC_MAX = 260;
+const GAP = 18;
+const SIDE = 14;
+const TITLE_H = 24;
+const BAR_H = 22;
+const READOUT_H = 20;
+const DEAD_ZONE = 0.045;
+const FINE = 0.2;
+
+let discCache = null;
+let discCacheSize = 0;
 
 function widgetOf(node, name) {
   return node.widgets?.find((w) => w.name === name);
 }
 
 function readWheel(node, wheel) {
-  const values = CHANNELS.map((c) => widgetOf(node, `${wheel.name}_${c}`)?.value ?? 0);
-  const master = widgetOf(node, `${wheel.name}_master`)?.value ?? wheel.centre;
-  return { rgb: values, master };
+  return {
+    rgb: CHANNELS.map((c) => widgetOf(node, `${wheel.name}_${c}`)?.value ?? 0),
+    master: widgetOf(node, `${wheel.name}_master`)?.value ?? wheel.centre,
+  };
 }
 
-// rgb offsets -> where the handle sits, as a unit vector on the disc.
-// The basis vectors sum to zero, so the mean taken out on the way in does not
-// disturb this: the inverse is exact.
 function handleFromRgb(rgb) {
   let x = 0;
   let y = 0;
@@ -51,20 +61,14 @@ function handleFromRgb(rgb) {
     x += rgb[k] * Math.cos(phi);
     y += rgb[k] * Math.sin(phi);
   }
-  x = (2 / 3) * x / SPAN;
-  y = (2 / 3) * y / SPAN;
-  const radius = Math.hypot(x, y);
-  return { x, y, radius: Math.min(radius, 1) };
+  return { x: ((2 / 3) * x) / SPAN, y: ((2 / 3) * y) / SPAN };
 }
 
-// A point on the disc -> the three channel offsets.
 function rgbFromHandle(x, y) {
   const angle = Math.atan2(y, x);
   const radius = Math.min(1, Math.hypot(x, y));
-  const raw = [];
-  for (let k = 0; k < 3; k += 1) {
-    raw.push(radius * Math.cos(angle - (k * TAU) / 3));
-  }
+  if (radius < DEAD_ZONE) return [0, 0, 0];
+  const raw = [0, 1, 2].map((k) => radius * Math.cos(angle - (k * TAU) / 3));
   const mean = (raw[0] + raw[1] + raw[2]) / 3;
   return raw.map((v) => (v - mean) * SPAN);
 }
@@ -87,82 +91,103 @@ function setWheel(node, wheel, rgb, master) {
   node.setDirtyCanvas(true, true);
 }
 
-function drawDisc(ctx, cx, cy, radius) {
-  // The hue circle, drawn as wedges rather than a conic gradient so it looks
-  // the same in every browser the editor runs in.
-  const steps = 72;
-  for (let i = 0; i < steps; i += 1) {
-    const a0 = (i / steps) * TAU;
-    const a1 = ((i + 1) / steps) * TAU;
-    const mid = (a0 + a1) / 2;
-    const rgb = [0, 1, 2].map((k) => {
-      const v = Math.cos(mid - (k * TAU) / 3);
-      return Math.round(128 + 110 * v);
-    });
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, radius, a0, a1 + 0.02);
-    ctx.closePath();
-    ctx.fillStyle = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-    ctx.fill();
+function applyPreset(node, values) {
+  for (const [name, value] of Object.entries(values)) {
+    const w = widgetOf(node, name);
+    if (w && typeof value === "number") {
+      w.value = value;
+      w.callback?.(w.value);
+    }
   }
+  node.setDirtyCanvas(true, true);
+  node.graph?.afterChange?.();
+}
 
-  // Fade towards neutral in the middle, so "no change" reads as the centre.
-  const fade = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-  fade.addColorStop(0, "rgba(128,128,128,1)");
-  fade.addColorStop(0.55, "rgba(128,128,128,0.25)");
-  fade.addColorStop(1, "rgba(128,128,128,0)");
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, TAU);
-  ctx.fillStyle = fade;
-  ctx.fill();
+function currentValues(node) {
+  const out = {};
+  for (const wheel of WHEELS) {
+    for (const suffix of [...CHANNELS, "master"]) {
+      const name = `${wheel.name}_${suffix}`;
+      const w = widgetOf(node, name);
+      if (w) out[name] = w.value;
+    }
+  }
+  for (const name of ["saturation", "contrast"]) {
+    const w = widgetOf(node, name);
+    if (w) out[name] = w.value;
+  }
+  return out;
+}
 
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, TAU);
-  ctx.strokeStyle = "rgba(0,0,0,0.55)";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+// The disc never changes, so it is painted once into an offscreen canvas and
+// blitted afterwards — three of them redrawn per animation frame otherwise.
+function discImage(size) {
+  if (discCache && discCacheSize === size) return discCache;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const r = size / 2;
+  const image = ctx.createImageData(size, size);
+  const data = image.data;
 
-  ctx.beginPath();
-  ctx.moveTo(cx - 4, cy);
-  ctx.lineTo(cx + 4, cy);
-  ctx.moveTo(cx, cy - 4);
-  ctx.lineTo(cx, cy + 4);
-  ctx.strokeStyle = "rgba(0,0,0,0.4)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  for (let py = 0; py < size; py += 1) {
+    for (let px = 0; px < size; px += 1) {
+      const dx = (px - r + 0.5) / r;
+      const dy = (py - r + 0.5) / r;
+      const radius = Math.hypot(dx, dy);
+      const index = (py * size + px) * 4;
+      if (radius > 1) {
+        data[index + 3] = 0;
+        continue;
+      }
+      const angle = Math.atan2(dy, dx);
+      for (let k = 0; k < 3; k += 1) {
+        const v = Math.cos(angle - (k * TAU) / 3);
+        // Saturating towards the rim, neutral grey in the middle, so the
+        // centre reads as "no change".
+        data[index + k] = Math.round(132 + 112 * v * radius);
+      }
+      const edge = radius > 0.985 ? (1 - radius) / 0.015 : 1;
+      data[index + 3] = Math.round(255 * Math.max(0, Math.min(1, edge)));
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  discCache = canvas;
+  discCacheSize = size;
+  return canvas;
 }
 
 function layout(width) {
-  const usable = width - PAD * 2 - GAP * 2;
-  const disc = Math.max(DISC_MIN, Math.min(DISC_MAX, usable / 3));
-  return { disc, height: LABEL_H + disc + RING_H + READOUT_H + PAD };
+  const usable = Math.max(240, width - SIDE * 2 - GAP * 2);
+  const disc = Math.max(DISC_MIN, Math.min(DISC_MAX, Math.floor(usable / 3)));
+  return { disc, height: TITLE_H + disc + BAR_H + READOUT_H + 10 };
 }
 
-function wheelRects(node, width, y) {
+function wheelRects(width, y) {
   const { disc } = layout(width);
   const total = disc * 3 + GAP * 2;
-  const left = (width - total) / 2;
+  const left = Math.max(SIDE, (width - total) / 2);
   return WHEELS.map((wheel, i) => {
     const x = left + i * (disc + GAP);
     return {
       wheel,
-      x,
       disc,
       cx: x + disc / 2,
-      cy: y + LABEL_H + disc / 2,
-      radius: disc / 2 - 3,
-      ring: { x, y: y + LABEL_H + disc + 4, w: disc, h: RING_H - 8 },
+      cy: y + TITLE_H + disc / 2,
+      radius: disc / 2 - 2,
+      bar: { x: x + 10, y: y + TITLE_H + disc + 6, w: disc - 20, h: BAR_H - 12 },
+      readoutY: y + TITLE_H + disc + BAR_H + 8,
     };
   });
 }
 
-function makeWidget(node) {
-  const state = { dragging: null };
+function makeWidget() {
+  const drag = { rect: null, kind: null, from: null, start: null, changed: false };
 
   const widget = {
     name: "colour_wheels",
-    type: "a1111cc_wheels",
+    type: "colorkit_wheels",
     options: { serialize: false },
     value: null,
 
@@ -170,117 +195,209 @@ function makeWidget(node) {
       return [width, layout(width).height];
     },
 
-    draw(ctx, drawnNode, width, y) {
-      const rects = wheelRects(drawnNode, width, y);
+    draw(ctx, node, width, y) {
+      const rects = wheelRects(width, y);
       ctx.save();
       ctx.textAlign = "center";
 
       for (const r of rects) {
-        const { rgb, master } = readWheel(drawnNode, r.wheel);
+        const { rgb, master } = readWheel(node, r.wheel);
         const handle = handleFromRgb(rgb);
+        const touched = Math.hypot(handle.x, handle.y) > 1e-6 ||
+          Math.abs(master - r.wheel.centre) > 1e-6;
 
-        ctx.fillStyle = "#cfcfd4";
-        ctx.font = "600 11px sans-serif";
-        ctx.fillText(`${r.wheel.label}  ·  ${r.wheel.hint}`, r.cx, y + 12);
+        ctx.fillStyle = touched ? "#e8e8ef" : "#9a9aa4";
+        ctx.font = "600 13px sans-serif";
+        ctx.fillText(`${r.wheel.label}   ${r.wheel.hint}`, r.cx, y + 16);
 
-        drawDisc(ctx, r.cx, r.cy, r.radius);
+        const size = Math.round(r.radius * 2);
+        ctx.drawImage(discImage(size), r.cx - r.radius, r.cy - r.radius, size, size);
+
+        ctx.beginPath();
+        ctx.arc(r.cx, r.cy, r.radius, 0, TAU);
+        ctx.strokeStyle = touched ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.5)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // crosshair at neutral
+        ctx.beginPath();
+        ctx.moveTo(r.cx - 6, r.cy);
+        ctx.lineTo(r.cx + 6, r.cy);
+        ctx.moveTo(r.cx, r.cy - 6);
+        ctx.lineTo(r.cx, r.cy + 6);
+        ctx.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
 
         const hx = r.cx + handle.x * r.radius;
         const hy = r.cy + handle.y * r.radius;
         ctx.beginPath();
-        ctx.arc(hx, hy, 6, 0, TAU);
-        ctx.fillStyle = "rgba(255,255,255,0.92)";
-        ctx.fill();
-        ctx.strokeStyle = "rgba(0,0,0,0.75)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // master ring
-        const ring = r.ring;
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.beginPath();
-        ctx.roundRect(ring.x, ring.y, ring.w, ring.h, ring.h / 2);
-        ctx.fill();
-        const t = (master - (r.wheel.centre - SPAN)) / (SPAN * 2);
-        const knob = ring.x + Math.max(0, Math.min(1, t)) * ring.w;
-        ctx.beginPath();
-        ctx.arc(knob, ring.y + ring.h / 2, ring.h / 2 + 1, 0, TAU);
-        ctx.fillStyle = "#d8d8de";
-        ctx.fill();
-        ctx.strokeStyle = "rgba(0,0,0,0.6)";
+        ctx.moveTo(r.cx, r.cy);
+        ctx.lineTo(hx, hy);
+        ctx.strokeStyle = "rgba(255,255,255,0.45)";
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        ctx.fillStyle = "#8d8d96";
-        ctx.font = "9px monospace";
-        const readout = `${rgb.map((v) => v.toFixed(2)).join(" ")}  ${master.toFixed(2)}`;
-        ctx.fillText(readout, r.cx, ring.y + ring.h + 11);
+        ctx.beginPath();
+        ctx.arc(hx, hy, 8, 0, TAU);
+        ctx.fillStyle = "rgba(250,250,255,0.95)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.8)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // master bar
+        const bar = r.bar;
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.beginPath();
+        ctx.roundRect(bar.x, bar.y, bar.w, bar.h, bar.h / 2);
+        ctx.fill();
+        const centreX = bar.x + bar.w / 2;
+        ctx.beginPath();
+        ctx.moveTo(centreX, bar.y);
+        ctx.lineTo(centreX, bar.y + bar.h);
+        ctx.strokeStyle = "rgba(255,255,255,0.25)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        const t = (master - (r.wheel.centre - SPAN)) / (SPAN * 2);
+        const knob = bar.x + Math.max(0, Math.min(1, t)) * bar.w;
+        ctx.beginPath();
+        ctx.arc(knob, bar.y + bar.h / 2, bar.h / 2 + 2, 0, TAU);
+        ctx.fillStyle = "#e2e2e8";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.65)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = "#8f8f99";
+        ctx.font = "10px monospace";
+        ctx.fillText(
+          `${rgb.map((v) => (v >= 0 ? " " : "") + v.toFixed(3)).join(" ")}   M ${master.toFixed(3)}`,
+          r.cx, r.readoutY,
+        );
       }
       ctx.restore();
     },
 
-    mouse(event, pos, drawnNode) {
-      const width = drawnNode.size[0];
-      const rects = wheelRects(drawnNode, width, widget.last_y ?? 0);
+    mouse(event, pos, node) {
+      const rects = wheelRects(node.size[0], widget.last_y ?? 0);
       const [mx, my] = pos;
 
       if (event.type === "pointerdown") {
         for (const r of rects) {
-          if (Math.hypot(mx - r.cx, my - r.cy) <= r.radius + 4) {
-            state.dragging = { kind: "disc", rect: r };
-            if (event.detail === 2 || event.shiftKey) {
-              setWheel(drawnNode, r.wheel, [0, 0, 0], r.wheel.centre);
-              state.dragging = null;
+          if (Math.hypot(mx - r.cx, my - r.cy) <= r.radius + 6) {
+            if (event.altKey) {
+              setWheel(node, r.wheel, [0, 0, 0], r.wheel.centre);
+              node.graph?.afterChange?.();
               return true;
             }
-            applyDisc(drawnNode, r, mx, my);
+            const { rgb } = readWheel(node, r.wheel);
+            drag.rect = r;
+            drag.kind = "disc";
+            drag.from = handleFromRgb(rgb);
+            drag.start = [mx, my];
+            drag.changed = false;
             return true;
           }
-          const ring = r.ring;
-          if (mx >= ring.x && mx <= ring.x + ring.w &&
-              my >= ring.y - 4 && my <= ring.y + ring.h + 4) {
-            state.dragging = { kind: "ring", rect: r };
-            applyRing(drawnNode, r, mx);
+          const bar = r.bar;
+          if (mx >= bar.x - 6 && mx <= bar.x + bar.w + 6 &&
+              my >= bar.y - 8 && my <= bar.y + bar.h + 8) {
+            if (event.altKey) {
+              const { rgb } = readWheel(node, r.wheel);
+              setWheel(node, r.wheel, rgb, r.wheel.centre);
+              node.graph?.afterChange?.();
+              return true;
+            }
+            drag.rect = r;
+            drag.kind = "bar";
+            drag.from = readWheel(node, r.wheel).master;
+            drag.start = [mx, my];
+            drag.changed = false;
             return true;
           }
         }
         return false;
       }
 
-      if (event.type === "pointermove" && state.dragging) {
-        const r = state.dragging.rect;
-        if (state.dragging.kind === "disc") applyDisc(drawnNode, r, mx, my);
-        else applyRing(drawnNode, r, mx);
+      if (event.type === "pointermove" && drag.rect) {
+        const r = drag.rect;
+        const scale = event.shiftKey ? FINE : 1.0;
+        drag.changed = true;
+        if (drag.kind === "disc") {
+          const dx = ((mx - drag.start[0]) / r.radius) * scale;
+          const dy = ((my - drag.start[1]) / r.radius) * scale;
+          let x = drag.from.x + dx;
+          let y = drag.from.y + dy;
+          const radius = Math.hypot(x, y);
+          if (radius > 1) {
+            x /= radius;
+            y /= radius;
+          }
+          setWheel(node, r.wheel, rgbFromHandle(x, y));
+        } else {
+          const dx = ((mx - drag.start[0]) / r.bar.w) * SPAN * 2 * scale;
+          const { rgb } = readWheel(node, r.wheel);
+          setWheel(node, r.wheel, rgb, drag.from + dx);
+        }
         return true;
       }
 
-      if (event.type === "pointerup" && state.dragging) {
-        state.dragging = null;
+      if (event.type === "pointerup" && drag.rect) {
+        if (drag.changed) node.graph?.afterChange?.();   // one undo step per drag
+        drag.rect = null;
+        drag.kind = null;
         return true;
       }
       return false;
     },
   };
 
-  function applyDisc(target, rect, mx, my) {
-    const x = (mx - rect.cx) / rect.radius;
-    const y = (my - rect.cy) / rect.radius;
-    setWheel(target, rect.wheel, rgbFromHandle(x, y));
-  }
-
-  function applyRing(target, rect, mx) {
-    const ring = rect.ring;
-    const t = Math.max(0, Math.min(1, (mx - ring.x) / ring.w));
-    const value = rect.wheel.centre - SPAN + t * SPAN * 2;
-    const { rgb } = readWheel(target, rect.wheel);
-    setWheel(target, rect.wheel, rgb, value);
-  }
-
   return widget;
 }
 
+// --------------------------------------------------------------------------- //
+// presets
+// --------------------------------------------------------------------------- //
+
+async function fetchPresets() {
+  try {
+    const response = await fetch("/colorkit/presets");
+    if (!response.ok) throw new Error(response.statusText);
+    return await response.json();
+  } catch (err) {
+    console.warn("[ColorKit] could not read presets:", err);
+    return { builtin: {}, user: {} };
+  }
+}
+
+async function savePreset(name, values) {
+  const response = await fetch("/colorkit/presets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, values }),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(detail.error ?? response.statusText);
+  }
+}
+
+async function deletePreset(name) {
+  await fetch(`/colorkit/presets?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+function presetMenu(node, entries, onPick) {
+  const names = Object.keys(entries);
+  if (!names.length) return [{ content: "(none yet)", disabled: true }];
+  return names.map((name) => ({
+    content: name,
+    callback: () => onPick(name, entries[name]),
+  }));
+}
+
 app.registerExtension({
-  name: "a1111cc.colorwheels",
+  name: "colorkit.wheels",
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (!NODES.includes(nodeData.name)) return;
@@ -289,29 +406,25 @@ app.registerExtension({
     nodeType.prototype.onNodeCreated = function () {
       const result = onNodeCreated?.apply(this, arguments);
 
-      // The numeric widgets stay on the node and keep working; they are moved
-      // out of sight so the wheels are what you see, and brought back by the
-      // right-click entry below for anyone who wants to type exact values.
-      this.a1111ccHidden = [];
+      this.colorkitHidden = [];
       for (const wheel of WHEELS) {
         for (const suffix of [...CHANNELS, "master"]) {
           const w = widgetOf(this, `${wheel.name}_${suffix}`);
-          if (w) this.a1111ccHidden.push(w);
+          if (w) this.colorkitHidden.push(w);
         }
       }
-      this.a1111ccShowNumbers = false;
+      this.colorkitShowNumbers = false;
       hideNumeric(this);
 
-      const wheels = makeWidget(this);
+      const wheels = makeWidget();
       this.addCustomWidget(wheels);
-      // Put the wheels above the remaining controls rather than at the end.
       const index = this.widgets.indexOf(wheels);
       if (index > 0) {
         this.widgets.splice(index, 1);
         this.widgets.unshift(wheels);
       }
 
-      this.size[0] = Math.max(this.size[0], 330);
+      this.size[0] = Math.max(this.size[0], 640);
       this.size[1] = this.computeSize()[1];
       return result;
     };
@@ -319,21 +432,60 @@ app.registerExtension({
     const getExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
     nodeType.prototype.getExtraMenuOptions = function (canvas, options) {
       getExtraMenuOptions?.apply(this, arguments);
+      const node = this;
+
       options.push(
         {
-          content: this.a1111ccShowNumbers ? "Hide the numbers" : "Show the numbers",
+          content: "Presets",
+          has_submenu: true,
+          callback: async (value, opts, event, parentMenu) => {
+            const { builtin, user } = await fetchPresets();
+            const entries = { ...builtin, ...user };
+            new LiteGraph.ContextMenu(
+              presetMenu(node, entries, (name, values) => applyPreset(node, values)),
+              { event, parentMenu, title: "Apply a preset" },
+            );
+          },
+        },
+        {
+          content: "Save these settings as a preset…",
           callback: () => {
-            this.a1111ccShowNumbers = !this.a1111ccShowNumbers;
-            if (this.a1111ccShowNumbers) showNumeric(this);
-            else hideNumeric(this);
-            this.size[1] = this.computeSize()[1];
-            this.setDirtyCanvas(true, true);
+            canvas.prompt("Preset name", "", async (name) => {
+              if (!name) return;
+              try {
+                await savePreset(name, currentValues(node));
+              } catch (err) {
+                alert(`Could not save the preset: ${err.message}`);
+              }
+            }, {});
+          },
+        },
+        {
+          content: "Delete a preset",
+          has_submenu: true,
+          callback: async (value, opts, event, parentMenu) => {
+            const { user } = await fetchPresets();
+            new LiteGraph.ContextMenu(
+              presetMenu(node, user, async (name) => { await deletePreset(name); }),
+              { event, parentMenu, title: "Delete which?" },
+            );
+          },
+        },
+        {
+          content: node.colorkitShowNumbers ? "Hide the numbers" : "Show the numbers",
+          callback: () => {
+            node.colorkitShowNumbers = !node.colorkitShowNumbers;
+            if (node.colorkitShowNumbers) showNumeric(node);
+            else hideNumeric(node);
+            node.size[1] = node.computeSize()[1];
+            node.setDirtyCanvas(true, true);
           },
         },
         {
           content: "Reset all three wheels",
           callback: () => {
-            for (const wheel of WHEELS) setWheel(this, wheel, [0, 0, 0], wheel.centre);
+            for (const wheel of WHEELS) setWheel(node, wheel, [0, 0, 0], wheel.centre);
+            node.graph?.afterChange?.();
           },
         },
       );
@@ -342,16 +494,16 @@ app.registerExtension({
 });
 
 function hideNumeric(node) {
-  for (const w of node.a1111ccHidden ?? []) {
-    w.a1111ccType = w.a1111ccType ?? w.type;
-    w.type = "a1111cc_hidden";
+  for (const w of node.colorkitHidden ?? []) {
+    w.colorkitType = w.colorkitType ?? w.type;
+    w.type = "colorkit_hidden";
     w.computeSize = () => [0, -4];
   }
 }
 
 function showNumeric(node) {
-  for (const w of node.a1111ccHidden ?? []) {
-    if (w.a1111ccType) w.type = w.a1111ccType;
+  for (const w of node.colorkitHidden ?? []) {
+    if (w.colorkitType) w.type = w.colorkitType;
     delete w.computeSize;
   }
 }
