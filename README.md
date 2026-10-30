@@ -17,7 +17,7 @@ being made* instead of repairing it afterwards.
 
 ### The blend decides whether the cast is removed at all
 
-![Blend modes](docs/demos/01-blend-modes.png)
+![Blend modes](docs/demos/01-blend-modes.jpg)
 
 `A1111 Color Correction` is the faithful port of
 `modules/processing.py: apply_color_correction`: histogram-match the result to
@@ -36,11 +36,11 @@ honestly labelled.
 
 ### The whole strength range is useful
 
-![Strength](docs/demos/02-image-strength.png)
+![Strength](docs/demos/02-image-strength.jpg)
 
 ### The colour is held during sampling, not patched afterwards
 
-![Latent colour guidance](docs/demos/03-latent-guidance.png)
+![Latent colour guidance](docs/demos/03-latent-guidance.jpg)
 
 `Apply Latent Color Guidance` patches the `MODEL`. At every step the model
 predicts what it thinks the finished image looks like; the patch nudges that
@@ -95,7 +95,7 @@ and the 128↔32 channel repacking Flux.2 needs round-trips bit-for-bit.
 
 ### Three transfer methods, for three different problems
 
-![Methods](docs/demos/04-methods.png)
+![Methods](docs/demos/04-methods.jpg)
 
 - **`mean_only`** shifts each channel's average. It cannot change contrast or
   detail, so it is the safe default on many-channel latents.
@@ -109,7 +109,7 @@ On SDXL at strength 0.6 the three land close together on the average (3.23 /
 3.28 / 3.20) and separate on the spread, where MKL is clearly ahead: 0.91
 against 1.12 for `mean_only` and 1.55 for `reinhard`.
 
-![Working space](docs/demos/05-working-space.png)
+![Working space](docs/demos/05-working-space.jpg)
 
 One honest note on `space`. On a four-channel SD or SDXL latent the channels
 really do behave like colour axes, so matching them raw is competitive — it

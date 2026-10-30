@@ -23,3 +23,7 @@ temp/
 # Full-resolution demo frames; the contact sheets in docs/demos are what the
 # README uses. Regenerate with tools/make_demos.py.
 docs/demos/frames/
+
+# Raw per-test images; report.txt and results.json are what is kept.
+docs/test-results/**/*.png
+docs/test-results/*.png
