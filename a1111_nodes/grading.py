@@ -105,9 +105,36 @@ class GradeCorrector:
     fifty times over, and the result would depend on the step count and on
     whether the sampler evaluates the model once or twice per step. Expressed
     as "put the shadows here", it converges — once the prediction already sits
-    on the targets it asks for nothing further, and `strength` means how fast
-    to get there rather than how far to go.
+    on the targets it asks for nothing further.
+
+    `strength` is how far to go: the targets sit that fraction of the way from
+    the ungraded levels to the graded ones. Each call closes a fixed share of
+    what is left (RATE). strength used to be that share, and over the eighteen
+    or so calls of a real window every share converges, so on SDXL 0.25 and 1.0
+    gave nearly the same picture.
+
+    Levels and colour are read off a box-blurred projection (BLUR). The first
+    prediction inside the window, where the targets are taken from, is the
+    finished picture without its fine detail, and fine detail carries colour:
+    on an SDXL street the projection's chroma at 30 % of the schedule was 0.83
+    of the finished one (0.70 through the measured axes), so a target taken
+    there asked for LESS colour than the model was going to paint anyway, and
+    a hold with neutral wheels took 17-30 % of the colour out of the finished
+    picture. After a 4-pixel blur the same chroma is 1.02 / 0.98 of the
+    finished picture's and the hold takes out 2 %; the levels' spread agrees
+    within 5 %. The map built from blurred levels is applied to the full
+    picture; for lift, gain and contrast it is the same map, and the colour
+    factor is the same ratio.
+
+    When the space carries the decoder's tonal response (measured axes), the
+    level targets are divided by it: a latent colour change at a shadow value
+    decodes at about 0.45 of its size, in the midtones at 1.4, so the
+    projection has to be asked for more in the shadows and less in the
+    midtones for the decoded picture to move by the grade.
     """
+
+    RATE = 0.5      # share of the remaining distance closed per call; the old default
+    BLUR = 5        # latent pixels; measured 4-6 keep the chroma within 2 % along the run
 
     def __init__(self, space, grade: G.Grade, strength: float, anchor=None):
         self.space = space
@@ -118,8 +145,21 @@ class GradeCorrector:
         self._target_chroma = None     # held like the levels, worked out with them
         self._last_sigma = None
         self._warned = set()
+        tone = getattr(space, "tone", None)
+        self._tone = _ToneCurve(tone) if tone else None
 
     wants_sigma = True
+
+    def _smooth(self, unit):
+        """The projection without its fine detail, for measuring levels and colour."""
+        k = self.BLUR
+        if k <= 1:
+            return unit
+        pad = k // 2
+        if unit.ndim == 5:
+            return torch.nn.functional.avg_pool3d(unit, (1, k, k), stride=1, padding=(0, pad, pad),
+                                                  count_include_pad=False)
+        return torch.nn.functional.avg_pool2d(unit, k, stride=1, padding=pad, count_include_pad=False)
 
     def _note_sigma(self, sigma):
         """Forget what we learned when a new run starts.
@@ -169,18 +209,30 @@ class GradeCorrector:
                 base = G.to_unit(self._anchor.to(unit.device, unit.dtype))
             else:
                 base = unit
+            base = self._smooth(base)
+            levels = G.channel_levels(base)
             if self.grade.saturation == 1.0:
                 # per-channel curves commute with percentiles: grade three numbers
-                self._targets = self._graded(G.channel_levels(base))
+                graded = self._graded(levels)
             else:
                 # Saturation mixes channels, so grade the base itself and read both
                 # targets off that one picture. Taking the levels from an unsaturated
                 # base and the colour from a saturated one gave two targets that
                 # disagreed — the curve pulled the channels together, the colour
                 # pushed them apart, and the correction never settled.
-                graded = G.apply_grade(base, self.grade)
-                self._targets = G.channel_levels(graded)
-                self._target_chroma = G.chroma_level(graded)
+                picture = G.apply_grade(base, self.grade)
+                graded = G.channel_levels(picture)
+                chroma = G.chroma_level(base)
+                self._target_chroma = chroma + (G.chroma_level(picture) - chroma) * self.strength
+            wanted = (graded - levels) * self.strength
+            if self._tone is not None:
+                # The decoder lets r(v) of a latent colour change through at tone v
+                # (0.45 near black, 1.4 in the midtones on SDXL), so the projection
+                # must move by 1/r of the grade for the picture to move by the grade.
+                # Applied to the chroma target as well this over-corrected (the
+                # colour factor landed at 0.6 of the image grade's), so it is not.
+                wanted = wanted / self._tone(levels)
+            self._targets = levels + wanted
         return self._targets.to(unit.device, unit.dtype), None
 
     def __call__(self, x0, sigma=None):
@@ -196,11 +248,11 @@ class GradeCorrector:
 
         targets, current = self._target_levels(unit)
         if current is None:
-            current = G.channel_levels(unit)
+            current = G.channel_levels(self._smooth(unit))
         if targets.shape[0] == 1 and current.shape[0] > 1:
             targets = targets.expand(current.shape[0], -1, -1)
 
-        step = (targets - current) * self.strength
+        step = (targets - current) * self.RATE
         mapped = G.piecewise_map(unit, current, current + step)
 
         if self.grade.saturation != 1.0:
@@ -208,11 +260,11 @@ class GradeCorrector:
             # was the one control that compounded: on SDXL, 26 steps from 30% of the
             # schedule, 1.15 raised the finished image's colour 3.2-fold. It now
             # pulls towards a held target, like the levels above.
-            current = G.chroma_level(mapped)
+            current = G.chroma_level(self._smooth(mapped))
             target = self._target_chroma.to(current.device, current.dtype)
             if target.shape[0] == 1 and current.shape[0] > 1:
                 target = target.expand(current.shape[0])
-            wanted = current + (target - current) * self.strength
+            wanted = current + (target - current) * self.RATE
             factor = (wanted / current.clamp_min(1e-6)).clamp(0.0, 2.0)
             mapped = G.scale_chroma(mapped, factor)
 
@@ -225,6 +277,23 @@ class GradeCorrector:
         return (source + delta).to(x0.dtype)
 
 
+class _ToneCurve:
+    """Piecewise-linear r(v) from a measured table, evaluated on any tensor of unit values."""
+
+    def __init__(self, table):
+        self.v = torch.tensor(table["v"], dtype=torch.float32)
+        self.r = torch.tensor(table["r"], dtype=torch.float32).clamp_min(0.3)
+
+    def __call__(self, value):
+        v = self.v.to(value.device, value.dtype)
+        r = self.r.to(value.device, value.dtype)
+        x = value.clamp(0.0, 1.0)
+        idx = torch.bucketize(x, v).clamp(1, len(v) - 1)
+        lo, hi = v[idx - 1], v[idx]
+        w = ((x - lo) / (hi - lo)).clamp(0.0, 1.0)
+        return r[idx - 1] * (1.0 - w) + r[idx] * w
+
+
 class LatentColorGrade:
     """Grade while the image is being made, not after."""
 
@@ -234,10 +303,10 @@ class LatentColorGrade:
             "model": ("MODEL",),
             "strength": ("FLOAT", {
                 "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
-                "tooltip": "How quickly the prediction is brought to the graded "
-                           "levels. The grade converges rather than piling up, so "
-                           "this is a rate, not an amount: 1.0 snaps there on every "
-                           "call, lower lets the model meet it half way.",
+                "tooltip": "How much of the grade: 1.0 the full look, 0.5 half of it. "
+                           "The grade is held as a target and approached a little on "
+                           "every step, so it neither piles up nor depends on the "
+                           "step count.",
             }),
             "start_percent": ("FLOAT", {
                 "default": 0.30, "min": 0.0, "max": 1.0, "step": 0.01,
@@ -286,7 +355,9 @@ class LatentColorGrade:
         reference = model.get_model_object("latent_format")
         channels = getattr(reference, "latent_channels", 4) or 4
         probe = _probe_latent(model, channels)
-        space = glue.detect_space(model, probe, "auto")
+        # The wheels invert the matrix to write colour; the preview fit inverts
+        # badly (SDXL: magenta, 3-5x too strong), so the measured axes are asked for.
+        space = glue.detect_space(model, probe, "auto", measured_axes=True)
         if space.kind == "raw":
             log.warning("Latent Color Grade: this model has no latent-to-RGB matrix, so "
                         "the wheels have no colour axes to work in; leaving it unpatched.")

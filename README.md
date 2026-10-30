@@ -180,6 +180,17 @@ The latent nodes earn their place by changing what the model draws rather
 than what comes out of it. When the precise number matters, finish on an
 image node.
 
+**Grade — latent on SDXL** writes its colour through the decoder's *measured*
+axes (`a1111_cc/axes.py`, made with `tools/calibrate_axes.py`), not through the
+preview matrix: inverted, the preview fit turned warm highlights magenta at
+three to six times the asked strength. Measured on an SDXL dusk street
+(txt2img, dpmpp_2m, strength 1.0), the latent grade now lands within 0.4–11°
+of the same wheels applied afterwards, at 0.89–1.00 of their size. Still
+approximate: on a bright img2img (denoise 0.7) Teal and orange came out the
+right hue but 3.4 times too strong, and strengths below 1.0 deliver less than
+their share (0.5 gave 0.36 of the grade). Other families use the preview
+matrix until they are measured.
+
 All of them take an optional `MASK`, which restricts *where the colours are
 measured* — the usual want for inpainting, where the surrounding plate would
 otherwise drag the statistics towards doing nothing.

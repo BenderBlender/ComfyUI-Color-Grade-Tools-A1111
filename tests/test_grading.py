@@ -392,11 +392,13 @@ def test_a_fixed_target_holds_the_levels_it_was_given():
     corrector(settled, 4.0)
     targets = corrector._targets.clone()
 
-    drifted = torch.randn(1, 4, 32, 32) * 1.4
-    out = corrector(drifted, 3.0)
+    out = torch.randn(1, 4, 32, 32) * 1.4          # drifted; each call closes RATE of the gap
+    for sigma in (3.0, 2.8, 2.6, 2.4, 2.2, 2.0, 1.8, 1.6):
+        out = corrector(out, sigma)
 
-    reached = G.channel_levels(G.to_unit(space.forward(out)))
-    assert torch.allclose(reached, targets, atol=0.05),         float((reached - targets).abs().max())
+    # measured the way the hook measures: levels of the blurred projection
+    reached = G.channel_levels(corrector._smooth(G.to_unit(space.forward(out))))
+    assert torch.allclose(reached, targets, atol=0.05), float((reached - targets).abs().max())
     assert torch.allclose(corrector._targets, targets), "the target must not move"
     print(f"  later drift pulled back to the target, within "
           f"{float((reached - targets).abs().max()):.3f}")
@@ -431,7 +433,7 @@ def test_saturation_converges_instead_of_compounding():
     """
     N = _node_module()
     space = _space()
-    corrector = N.GradeCorrector(space, G.Grade(saturation=1.15), 0.5)
+    corrector = N.GradeCorrector(space, G.Grade(saturation=1.15), 1.0)
 
     def colour(latent):
         # measured here, independently of the code under test: mean |rgb - grey|
@@ -560,7 +562,7 @@ def test_the_grade_survives_a_model_that_pushes_back():
     grade = G.Grade(gain=G.Wheel(red=0.12), lift=G.Wheel(master=0.05))
 
     def delivered(keeps, calls=16):
-        corrector = N.GradeCorrector(space, grade, 0.5)
+        corrector = N.GradeCorrector(space, grade, 1.0)     # the whole grade asked for
         base = torch.randn(1, 4, 32, 32)
         x = base.clone()
         for i in range(calls):
@@ -580,6 +582,158 @@ def test_the_grade_survives_a_model_that_pushes_back():
     assert results[1.0] > results[0.8] > results[0.5], results
     print("  grade delivered: " +
           ", ".join(f"{k:.0%} kept -> {v:.2f}" for k, v in results.items()))
+
+
+def test_the_target_survives_the_detail_the_model_adds_later():
+    """The first prediction inside the window is the finished picture without
+    its fine detail, and fine detail carries colour: on an SDXL street the
+    projection's chroma at 30 % was 0.83 of the finished picture's (0.70
+    through the measured axes), so a target read there asked for less colour
+    than the model was going to paint, and a hold with neutral wheels took
+    17-30 % of the colour out. Read through a 4-pixel blur the two agree within
+    2 %. Modelled here: a smooth picture, and the same picture with fine
+    coloured detail on top; the chroma target must come out nearly the same.
+    """
+    N = _node_module()
+    space = _space()
+    torch.manual_seed(3)
+    coarse = torch.nn.functional.interpolate(torch.randn(1, 4, 6, 6), size=(48, 48), mode="bilinear",
+                                             align_corners=False)
+    detail = torch.randn(1, 4, 48, 48) * 0.6
+    grade = G.Grade(saturation=1.3)
+
+    def target_of(latent):
+        corrector = N.GradeCorrector(space, grade, 1.0)
+        corrector(latent, 4.0)
+        return float(corrector._target_chroma[0])
+
+    raw = {k: float(G.chroma_level(G.to_unit(space.forward(v)))[0])
+           for k, v in (("coarse", coarse), ("sharp", coarse + detail))}
+    assert raw["sharp"] > raw["coarse"] * 1.3, raw             # the detail does add colour
+    early, late = target_of(coarse), target_of(coarse + detail)
+    assert abs(early / late - 1.0) < 0.15, (early, late, raw)
+    print(f"  raw chroma {raw['coarse']:.3f} -> {raw['sharp']:.3f} with detail; "
+          f"held target {early:.3f} vs {late:.3f}")
+
+
+def test_measured_axes_replace_the_preview_matrix_for_the_wheels():
+    """ComfyUI's latent_rgb_factors are a fit of the decoded picture, made for
+    previews; inverted to write colour they are wrong by direction and size
+    (SDXL: +red decodes as red minus green, darker, 3-5x). The wheels ask for
+    the decoder's measured response instead, where the family has one."""
+    from a1111_cc import axes, glue
+    from a1111_cc import space as S
+
+    class SDXL:                      # the latent format's class NAME is the key
+        latent_channels = 4
+        latent_dimensions = 2
+        latent_rgb_factors = [[0.3651, 0.4232, 0.4341], [-0.2533, -0.0042, 0.1068],
+                              [0.1076, 0.1111, -0.0362], [-0.3165, -0.2492, -0.2188]]
+        latent_rgb_factors_bias = [0.1084, -0.0175, -0.0011]
+
+    class Model:
+        def get_model_object(self, name):
+            assert name == "latent_format"
+            return SDXL()
+
+    probe = torch.zeros(1, 4, 8, 8)
+    preview = glue.detect_space(Model(), probe, "auto")
+    measured = glue.detect_space(Model(), probe, "auto", measured_axes=True)
+    assert preview.note != "measured axes" and preview.tone is None
+    assert measured.note == "measured axes" and measured.tone is not None
+    assert torch.allclose(measured._proj, torch.tensor(axes.MEASURED["SDXL"]["factors"]))
+
+    # the reason: the preview fit is ill-conditioned, the measured axes are not
+    def condition(space):
+        sv = torch.linalg.svdvals(space._proj.double())
+        return float(sv[0] / sv[-1])
+    assert condition(preview) > 2 * condition(measured), (condition(preview), condition(measured))
+
+    # unknown family: the preview matrix, with no tone curve
+    class Mystery(SDXL):
+        pass
+
+    class Other:
+        def get_model_object(self, name):
+            return Mystery()
+    fallback = glue.detect_space(Other(), probe, "auto", measured_axes=True)
+    assert fallback.note != "measured axes" and fallback.tone is None
+    print(f"  condition number: preview {condition(preview):.1f}, measured {condition(measured):.1f}")
+
+
+def test_tone_response_asks_more_where_the_decoder_gives_less():
+    """A latent colour change decodes at 0.45 of its size near black and 1.4
+    in the midtones (SDXL, measured), so the level targets are divided by the
+    response: twice the lift is asked for in the shadows."""
+    N = _node_module()
+    from a1111_cc import space as S
+    torch.manual_seed(7)
+    factors = torch.randn(4, 3) * 0.3
+    plain = S.LatentColorSpace.rgb(factors, channels=4)
+    toned = S.LatentColorSpace.rgb(factors, channels=4, tone={"v": [0.0, 0.5, 1.0], "r": [0.5, 1.0, 1.0]})
+    grade = G.Grade(lift=G.Wheel(master=0.10))
+    # a picture whose shadows sit near zero and midtones near a half
+    x = torch.rand(1, 4, 32, 32) * 2.0 - 1.0
+    deltas = {}
+    for name, space in (("plain", plain), ("toned", toned)):
+        corrector = N.GradeCorrector(space, grade, 1.0)
+        corrector(x, 4.0)
+        levels = G.channel_levels(corrector._smooth(G.to_unit(space.forward(x))))
+        deltas[name] = corrector._targets - levels
+    shadow = levels[0, :, 0].mean()
+    ratio = float(deltas["toned"][0, :, 0].mean() / deltas["plain"][0, :, 0].mean())
+    expected = 1.0 / N._ToneCurve({"v": [0.0, 0.5, 1.0], "r": [0.5, 1.0, 1.0]})(shadow)
+    assert abs(ratio - expected) < 0.05, (ratio, expected, float(shadow))
+    assert torch.allclose(deltas["toned"][0, :, 2], deltas["plain"][0, :, 2], atol=1e-5)  # highlights: r = 1
+    print(f"  shadow level {float(shadow):.2f}: target delta x{ratio:.2f} (expected x{expected:.2f})")
+
+
+def test_strength_is_how_much_of_the_grade():
+    """strength was a rate: how fast the held target was approached. Over the
+    eighteen or so calls of a real window every rate converges, so on SDXL
+    0.25 and 1.0 gave nearly the same picture (colour x1.81 against x2.09 for
+    Teal and orange) and the slider did nothing a user could see. It is now
+    the amount: the target sits that fraction of the way from the ungraded
+    levels to the graded ones. Measured here with a model that keeps all it is
+    given, levels and colour separately, independently of the code under test.
+    """
+    N = _node_module()
+    space = _space()
+    grade = G.Grade(gain=G.Wheel(red=0.12), lift=G.Wheel(master=0.05))
+
+    def levels_delivered(strength, calls=18):
+        corrector = N.GradeCorrector(space, grade, strength)
+        base = torch.randn(1, 4, 32, 32)
+        x = base.clone()
+        for i in range(calls):
+            x = corrector(x, 10.0 - i * 0.5)
+        levels = G.channel_levels(G.to_unit(space.forward(base)))
+        wanted = G.apply_grade(levels.reshape(1, 3, 1, 3), grade.tonal()).reshape(levels.shape)
+        got = G.channel_levels(G.to_unit(space.forward(x)))
+        return float((got - levels).abs().mean() / (wanted - levels).abs().mean())
+
+    def colour(latent):
+        rgb = G.to_unit(space.forward(latent))
+        grey = (rgb * torch.tensor([0.2126, 0.7152, 0.0722]).view(1, 3, 1, 1)).sum(1, keepdim=True)
+        return float((rgb - grey).abs().mean())
+
+    def colour_ratio(strength, calls=18):
+        corrector = N.GradeCorrector(space, G.Grade(saturation=1.4), strength)
+        x = torch.randn(1, 4, 32, 32)
+        start = colour(x)
+        for i in range(calls):
+            x = corrector(x, 10.0 - i * 0.5)
+        return colour(x) / start
+
+    lv = {s: levels_delivered(s) for s in (0.25, 0.5, 1.0)}
+    for s, got in lv.items():
+        assert abs(got - s) < 0.1, f"strength {s} delivered {got:.2f} of the grade; {lv}"
+    cr = {s: colour_ratio(s) for s in (0.25, 0.5, 1.0)}
+    for s, got in cr.items():
+        want = 1 + 0.4 * s
+        assert abs(got - want) < 0.06, f"strength {s}: colour x{got:.3f}, wanted x{want:.2f}; {cr}"
+    print("  levels delivered: " + ", ".join(f"{s} -> {v:.2f}" for s, v in lv.items())
+          + "; colour (saturation 1.4): " + ", ".join(f"{s} -> x{v:.3f}" for s, v in cr.items()))
 
 
 # --------------------------------------------------------------------------- #
@@ -658,6 +812,17 @@ def test_presets_differ_from_each_other():
             if float((rendered[first] - rendered[second]).abs().mean()) < 0.01:
                 duplicates.append((first, second))
     assert not duplicates, duplicates
+
+
+def test_a_saved_name_keeps_single_spaces():
+    """Characters outside the safe set are cut, and the spaces around them used
+    to stay: «Тест — тёплые света» was saved as «Тест  тёплые света», two
+    spaces, which a user cannot tell from one in the menu and cannot type back
+    to delete it."""
+    from a1111_cc import presets as P
+    assert P.clean_name("Тест — тёплые света") == "Тест тёплые света"
+    assert P.clean_name("  Warm · night  ") == "Warm night"
+    assert P.clean_name("Day (v2) - soft") == "Day (v2) - soft", "the safe set itself is untouched"
 
 
 if __name__ == "__main__":

@@ -118,7 +118,8 @@ def _user_file() -> str:
 
 
 def clean_name(name: str) -> str:
-    name = _SAFE_NAME.sub("", str(name)).strip()
+    # cutting a character leaves the spaces either side of it; keep one
+    name = " ".join(_SAFE_NAME.sub("", str(name)).split())
     return name[:64]
 
 

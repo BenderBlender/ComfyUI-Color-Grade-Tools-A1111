@@ -9,6 +9,7 @@ import logging
 
 import torch
 
+from . import axes
 from .space import INVERSE_RESHAPES, LatentColorSpace
 
 log = logging.getLogger(__name__)
@@ -34,8 +35,18 @@ def from_model_space(model, samples: torch.Tensor) -> torch.Tensor:
     return model.get_model_object("latent_format").process_out(samples)
 
 
-def detect_space(model, reference: torch.Tensor, requested: str = "auto") -> LatentColorSpace:
-    """Work out which space to correct in, from the model's latent format."""
+def detect_space(model, reference: torch.Tensor, requested: str = "auto",
+                 measured_axes: bool = False) -> LatentColorSpace:
+    """Work out which space to correct in, from the model's latent format.
+
+    With ``measured_axes`` the decoder's measured colour response (:mod:`axes`)
+    replaces the preview matrix when this family has been measured. The grade
+    wheels ask for it: they *invert* the matrix to write colour into the
+    latent, and the preview fit inverts badly (SDXL: magenta, 3-5x too strong).
+    The guidance and match nodes keep the preview matrix by default — they
+    match statistics measured through the same matrix, where it is a
+    consistent pair, and their results were not measured with the other one.
+    """
     latent_format = model.get_model_object("latent_format")
     name = type(latent_format).__name__
 
@@ -87,6 +98,14 @@ def detect_space(model, reference: torch.Tensor, requested: str = "auto") -> Lat
                                         note="un-invertible reshape")
 
     bias = getattr(latent_format, "latent_rgb_factors_bias", None)
+    if measured_axes and reshape is None:
+        measured = axes.lookup(name)
+        if measured is not None and len(measured["factors"]) == channels:
+            return LatentColorSpace.rgb(measured["factors"], measured["bias"], ndim=ndim,
+                                        channels=channels, note="measured axes",
+                                        tone=measured.get("tone"))
+        log.info("A1111 latent colour: no measured decoder axes for %s; using the preview "
+                 "matrix (colour will land off-hue and too strong on some families).", name)
     if channels == 3 and reshape is None and _is_identity(factors) and not bias:
         # Pixel-space formats (ChromaRadiance and friends) carry an identity
         # matrix: the latent already is RGB, so skip the projection entirely.

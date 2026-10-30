@@ -76,7 +76,8 @@ class LatentColorSpace:
                  reshape: Optional[Callable] = None,
                  inverse_reshape: Optional[Callable] = None,
                  default_method: str = "reinhard",
-                 note: str = ""):
+                 note: str = "",
+                 tone: Optional[dict] = None):
         self.kind = kind
         self.channels = channels
         self.ndim = ndim
@@ -84,6 +85,9 @@ class LatentColorSpace:
         self.inverse_reshape = inverse_reshape
         self.default_method = default_method
         self.note = note
+        # Measured axes carry the decoder's tonal response, {"v": [...], "r": [...]}
+        # (see axes.py); the preview matrix carries none.
+        self.tone = tone
 
         self._proj = proj                 # [C, 3]
         self._bias = bias                 # [3]
@@ -103,13 +107,14 @@ class LatentColorSpace:
 
     @classmethod
     def rgb(cls, factors, bias=None, reshape=None, inverse_reshape=None,
-            ndim: int = 4, channels: int = 0) -> "LatentColorSpace":
+            ndim: int = 4, channels: int = 0, note: str = "",
+            tone: Optional[dict] = None) -> "LatentColorSpace":
         p = torch.as_tensor(factors, dtype=torch.float32)
         if p.ndim != 2 or p.shape[1] != 3:
             raise ValueError(f"latent_rgb_factors should be [C,3], got {tuple(p.shape)}")
         b = None if bias is None else torch.as_tensor(bias, dtype=torch.float32)
         return cls(RGB_PROJ, channels or p.shape[0], ndim, proj=p, bias=b,
-                   reshape=reshape, inverse_reshape=inverse_reshape)
+                   reshape=reshape, inverse_reshape=inverse_reshape, note=note, tone=tone)
 
     @classmethod
     def pixel(cls, ndim: int = 4) -> "LatentColorSpace":
