@@ -22,6 +22,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from a1111_cc import grading as G  # noqa: E402
 
+
+def _node_module():
+    """Import the node module as part of the pack.
+
+    ``a1111_nodes/grading.py`` says ``from ..a1111_cc import glue``, which
+    only resolves inside a parent package, so one is built here rather than
+    loosening the import in the node itself.
+    """
+    import importlib
+    import types
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if "a1111cc_pack" not in sys.modules:
+        parent = types.ModuleType("a1111cc_pack")
+        parent.__path__ = [root]
+        sys.modules["a1111cc_pack"] = parent
+    return importlib.import_module("a1111cc_pack.a1111_nodes.grading")
+
 SPAN = 0.5          # must match SPAN in web/colorwheels.js
 TAU = math.pi * 2
 
@@ -164,29 +182,83 @@ def test_video_shaped_tensors_are_handled():
     assert torch.isfinite(graded).all()
 
 
-def test_the_order_of_operations_is_the_documented_one():
-    """lift first, then gain, then gamma — and each sees the previous result.
+def test_lift_and_gain_are_independent_endpoints():
+    """Black lands on lift and white on gain, whatever the other one is doing.
 
-    Gain multiplying what lift has already raised is the point: that is the
-    order a grading panel works in, and it is why the two controls feel
-    different rather than interchangeable.
+    This is the property that makes the two wheels feel like separate
+    controls. Composing them as `v + lift*(1-v)` and then `v*gain` instead
+    would let gain drag the black point around whenever lift was non-zero.
     """
     base = ramp()
-    lift = G.Wheel(master=0.15)
-    gain = G.Wheel(master=0.2)
+    lift, gain = 0.15, 1.2
 
-    lifted = G.apply_grade(base, G.Grade(lift=lift))
-    both = G.apply_grade(base, G.Grade(lift=lift, gain=gain))
+    graded = G.apply_grade(base, G.Grade(lift=G.Wheel(master=lift),
+                                         gain=G.Wheel(master=gain - 1.0)))
+    black = float(graded[..., 0].mean())
+    white = float(graded[..., -1].mean())
+    assert abs(black - lift) < 1e-5, black
+    assert abs(white - gain) < 1e-5, white
+    print(f"  black -> {black:.3f} (lift), white -> {white:.3f} (gain)")
 
-    expected = lifted * 1.2
-    assert torch.allclose(both, expected, atol=1e-5), \
-        float((both - expected).abs().max())
 
-    # And applied alone, each still leaves the far end of the ramp alone.
-    assert abs(float(lifted[..., -1].mean() - base[..., -1].mean())) < 1e-5
-    gained = G.apply_grade(base, G.Grade(gain=gain))
-    assert abs(float(gained[..., 0].mean() - base[..., 0].mean())) < 1e-5
-    print("  lift -> gain -> gamma, each seeing the last")
+def test_gamma_passes_negatives_through():
+    """A power curve has nothing to say below zero, and clamping there would
+    crush the darkest part of the latent a little more on every step."""
+    values = torch.tensor([-0.3, -0.1, 0.0, 0.25, 0.5]).reshape(1, 1, 1, 5).repeat(1, 3, 1, 1)
+    graded = G.apply_grade(values, G.Grade(gamma=G.Wheel(master=0.5)))
+    assert torch.allclose(graded[..., :2], values[..., :2], atol=1e-6), graded[0, 0, 0]
+    assert float(graded[..., 3].mean()) != float(values[..., 3].mean())
+    print(f"  negatives untouched: {[round(float(v), 3) for v in graded[0, 0, 0]]}")
+
+
+def test_gamma_continues_smoothly_above_white():
+    """Above one the curve follows its own tangent instead of exploding."""
+    values = torch.tensor([1.0, 1.5, 2.0]).reshape(1, 1, 1, 3).repeat(1, 3, 1, 1)
+    graded = G.apply_grade(values, G.Grade(gamma=G.Wheel(master=-0.5)))[0, 0, 0]
+    assert abs(float(graded[0]) - 1.0) < 1e-6
+    steps = [float(graded[1] - graded[0]), float(graded[2] - graded[1])]
+    assert abs(steps[0] - steps[1]) < 1e-5, steps      # linear, so even steps
+    assert float(graded[2]) < 4.0, float(graded[2])    # a power curve would reach 4
+
+
+def test_defaults_are_neutral():
+    """An untouched grading node must change nothing at all.
+
+    It did not: the node added the neutral centre on top of a value that had
+    already had it taken off, so a fresh node graded at gamma 2 and gain 2.
+    """
+    N = _node_module()
+
+    defaults = {name: spec[1]["default"] for name, spec in N.GRADE_CONTROLS.items()}
+    grade = N._grade_from(defaults)
+
+    assert grade.is_neutral(), (grade.gamma.master, grade.gain.master, grade.lift.master)
+    base = ramp()
+    assert torch.allclose(G.apply_grade(base, grade), base, atol=1e-6), \
+        [round(float(v), 3) for v in G.apply_grade(base, grade)[0, 0, 0, ::64]]
+    print("  a fresh node is a no-op")
+
+
+def test_widget_values_reach_the_grade():
+    """A master typed into the node must arrive as an offset from neutral."""
+    N = _node_module()
+
+    values = {name: spec[1]["default"] for name, spec in N.GRADE_CONTROLS.items()}
+    values["gain_master"] = 1.25
+    values["lift_master"] = 0.1
+    values["gamma_master"] = 0.8
+    grade = N._grade_from(values)
+
+    assert abs(grade.gain.master - 0.25) < 1e-9, grade.gain.master
+    assert abs(grade.lift.master - 0.10) < 1e-9, grade.lift.master
+    assert abs(grade.gamma.master + 0.20) < 1e-9, grade.gamma.master
+
+    # The tensors come back in the source dtype, so compare at float32's
+    # resolution rather than the double-precision one used above.
+    probe = torch.zeros(1, 3, 1, 1)
+    assert abs(float(grade.gain.as_tensor(probe, centre=1.0)[0, 0]) - 1.25) < 1e-6
+    assert abs(float(grade.gamma.as_tensor(probe, centre=1.0)[0, 0]) - 0.80) < 1e-6
+    print("  typed values arrive as offsets from neutral")
 
 
 if __name__ == "__main__":

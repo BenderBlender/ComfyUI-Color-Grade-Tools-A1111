@@ -60,9 +60,10 @@ class Wheel:
         shape = [1, 3] + [1] * (like.ndim - 2)
         return torch.tensor(values, device=like.device, dtype=like.dtype).reshape(shape)
 
-    def is_neutral(self, centre: float = 0.0) -> bool:
-        return (self.red == self.green == self.blue == 0.0
-                and self.master == centre - centre)
+    def is_neutral(self) -> bool:
+        """True when this wheel changes nothing. ``master`` is an offset from
+        neutral, so zero is neutral whatever the centre happens to be."""
+        return self.red == self.green == self.blue == self.master == 0.0
 
 
 @dataclass
@@ -96,18 +97,27 @@ def apply_grade(rgb: torch.Tensor, grade: Grade) -> torch.Tensor:
         out = out + offset
 
     lift = grade.lift.as_tensor(rgb)
-    if float(lift.abs().max()) > 0:
-        # Pivoting on white is what makes this touch shadows and leave
-        # highlights alone — the defining property of a lift control.
-        out = out + lift * (1.0 - out)
-
     gain = grade.gain.as_tensor(rgb, centre=1.0)
-    if float((gain - 1.0).abs().max()) > 0:
-        out = out * gain
+    if float(lift.abs().max()) > 0 or float((gain - 1.0).abs().max()) > 0:
+        # The classic form: black lands on lift, white lands on gain. Written
+        # as `v + lift*(1-v)` followed by `v*gain` instead, gain would drag
+        # the black point along with it whenever lift was non-zero, and the
+        # two controls would stop being independent. This is also the slope /
+        # offset pair of ASC CDL, which makes the grade exportable.
+        out = out * (gain - lift) + lift
 
     gamma = grade.gamma.as_tensor(rgb, centre=1.0).clamp_min(GAMMA_FLOOR)
     if float((gamma - 1.0).abs().max()) > 0:
-        out = out.clamp_min(0.0) ** (1.0 / gamma)
+        inverse = 1.0 / gamma
+        # Below zero and above one a power curve is either undefined or wildly
+        # steep. Negatives pass straight through, as ASC CDL specifies, and
+        # above white the curve continues along its own tangent. Both matter
+        # in the latent, where a few percent of the projection sits outside
+        # [0, 1] — clamping them instead would crush the darkest pixels onto
+        # black a little more on every sampling step.
+        powered = out.clamp(0.0, 1.0) ** inverse
+        extended = 1.0 + (out - 1.0) * inverse
+        out = torch.where(out > 1.0, extended, torch.where(out > 0.0, powered, out))
 
     if grade.contrast != 1.0:
         out = (out - grade.pivot) * grade.contrast + grade.pivot

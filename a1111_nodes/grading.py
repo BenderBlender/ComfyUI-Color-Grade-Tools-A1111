@@ -32,6 +32,9 @@ from ..a1111_cc import grading as G
 
 log = logging.getLogger(__name__)
 
+# Our own wrapper key: detaching must not lift someone else's hook.
+GRADE_KEY = "a1111_color_grade"
+
 WHEELS = ("lift", "gamma", "gain")
 CHANNELS = ("r", "g", "b")
 
@@ -71,10 +74,9 @@ def _grade_from(values: dict) -> G.Grade:
         saturation=float(values.get("saturation", 1.0)),
         contrast=float(values.get("contrast", 1.0)),
     )
-    # The wheels are stored as offsets from neutral; gamma and gain are
-    # multiplicative, so their neutral is one rather than zero.
-    grade.gamma.master += 1.0
-    grade.gain.master += 1.0
+    # Wheel.master is an offset from neutral and as_tensor adds the centre
+    # back on, so nothing more is needed here. Adding the centre a second time
+    # is what made an untouched node grade at gamma 2 and gain 2.
     return grade
 
 
@@ -154,7 +156,7 @@ class LatentColorGrade:
     def apply(self, model, strength, start_percent, end_percent, **controls):
         grade = _grade_from(controls)
         if strength <= 0.0 or grade.is_neutral() or start_percent >= end_percent:
-            return (glue.detach(model),)
+            return (glue.detach(model, key=GRADE_KEY),)
 
         reference = model.get_model_object("latent_format")
         channels = getattr(reference, "latent_channels", 4) or 4
@@ -163,11 +165,11 @@ class LatentColorGrade:
         if space.kind == "raw":
             log.warning("Latent Color Grade: this model has no latent-to-RGB matrix, so "
                         "the wheels have no colour axes to work in; leaving it unpatched.")
-            return (glue.detach(model),)
+            return (glue.detach(model, key=GRADE_KEY),)
 
         sigma_hi, sigma_lo = glue.sigma_window(model, start_percent, end_percent)
         corrector = GradeCorrector(space, grade, float(strength))
-        return (glue.attach(model, corrector, sigma_hi, sigma_lo, key="a1111_color_grade"),)
+        return (glue.attach(model, corrector, sigma_hi, sigma_lo, key=GRADE_KEY),)
 
 
 def _probe_latent(model, channels):
