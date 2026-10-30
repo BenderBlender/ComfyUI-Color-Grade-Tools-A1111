@@ -13,6 +13,25 @@ being made* instead of repairing it afterwards.
 
 ---
 
+## What it looks like
+
+Three rows from the **[showcase](docs/showcase/README.md)** — every node on pictures, with its settings and the
+measured numbers (SDXL, 30 October 2026).
+
+| img2img at denoise 0.9 | Input | No correction | A1111 Color Correction |
+|---|---|---|---|
+| bit-identical to the webui's own function | <img src="docs/showcase/frames/robot.jpg" width="100%"> | <img src="docs/showcase/frames/img2img_plain_d0.9.jpg" width="100%"> | <img src="docs/showcase/frames/S_robot_d0.9_01cc.jpg" width="100%"> |
+
+| A dusk street, Teal and orange | No grade | Wheels on the decoded picture | Grade wheels — latent |
+|---|---|---|---|
+| the model composes in the look; 2.8° of hue from the image grade | <img src="docs/showcase/frames/I_street_s0_none.jpg" width="100%"> | <img src="docs/showcase/frames/I_street_s0_teal_and_orange_after.jpg" width="100%"> | <img src="docs/showcase/frames/I_street_s0_teal_and_orange_while_k1.0_start0.6.jpg" width="100%"> |
+
+| Loopback, 8th pass | Input | No correction | Colour correction |
+|---|---|---|---|
+| colour drift 7.7 without, 0.7 with | <img src="docs/showcase/frames/girl.jpg" width="100%"> | <img src="docs/showcase/frames/H_girl_cc0_pass08.jpg" width="100%"> | <img src="docs/showcase/frames/H_girl_cc1_pass08.jpg" width="100%"> |
+
+---
+
 ## What it does
 
 ### The blend decides whether the cast is removed at all
