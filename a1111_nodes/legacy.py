@@ -23,7 +23,7 @@ _WARNED = False
 
 
 class A1111LatentColorKSampler:
-    """Deprecated. Use Apply Latent Color Guidance with any sampler instead."""
+    """Deprecated. Use Color Grade · Latent Color Guidance with any sampler instead."""
 
     DEPRECATED = True
 
@@ -55,7 +55,7 @@ class A1111LatentColorKSampler:
     FUNCTION = "sample"
     CATEGORY = "Color Grade Tools/sampling"
     DESCRIPTION = (
-        "Deprecated. Replace with Apply Latent Color Guidance feeding an ordinary "
+        "Deprecated. Replace with Color Grade · Latent Color Guidance feeding an ordinary "
         "KSampler — the same correction, with every sampler and model family."
     )
 
@@ -66,13 +66,13 @@ class A1111LatentColorKSampler:
         if not _WARNED:
             _WARNED = True
             log.warning(
-                "KSampler (A1111 Latent Color Match) is deprecated. It now corrects the "
+                "Color Grade · KSampler (old) is deprecated. It now corrects the "
                 "x0 prediction with a correctly scaled reference, so the same strength "
                 "value is far stronger than before — start around 0.3-0.5 rather than "
                 "0.01. The step ratios are now read as a share of the model's sigma "
                 "schedule rather than of the step count, which shifts the window a "
                 "little on non-linear schedulers such as karras. "
-                "Replace it with Apply Latent Color Guidance + KSampler."
+                "Replace it with Color Grade · Latent Color Guidance + KSampler."
             )
 
         if strength > 0.0 and start_step_ratio < end_step_ratio:
