@@ -12,8 +12,8 @@
     "improvement_pct": 21.84036170985559,
     "detail_plain": 6.807252883911133,
     "detail_guided": 7.599265098571777,
-    "seconds_plain": 0.9361498355865479,
-    "seconds_guided": 0.9806094169616699,
+    "seconds_plain": 0.9782900810241699,
+    "seconds_guided": 0.9480905532836914,
     "loopback": {
       "off": {
         "lightness": 5.9320220947265625,
@@ -24,8 +24,8 @@
         "chroma": 0.13214874267578125
       },
       "hold_exposure": {
-        "lightness": 0.1351165771484375,
-        "chroma": 0.072998046875
+        "lightness": 0.04327392578125,
+        "chroma": 0.1739654541015625
       }
     }
   }

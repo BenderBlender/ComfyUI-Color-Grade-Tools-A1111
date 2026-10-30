@@ -7,25 +7,29 @@ per-step operation touching the latent is the inpaint mask blend. What people
 remember as "colour correction carried through the whole process" is
 ``scripts/loopback.py``: a chain of img2img passes where the output of each
 becomes the input of the next, and every pass is corrected against **one**
-reference computed once from the original image. The anchor never moves, so
-colour cannot drift however many passes run — which from the outside looks
-like the correction is built into generation.
+reference measured once from the original image. The anchor never moves, so
+colour cannot drift however many passes run, while the content is fully
+regenerated each time — which from the outside looks like the correction is
+part of generation.
 
 That shape cannot be a model patch: each iteration has to decode to pixels,
 correct there, and encode again. So this is a sampler node that owns its loop.
 
 Reproduced from the documented behaviour of the script, not copied from it —
-that file is AGPL-3.0 and this pack is MIT. The behaviour being reproduced:
+that file is AGPL-3.0 and this pack is MIT. The behaviour reproduced:
 
-* the reference is measured once, from the original image, and reused for
-  every iteration;
-* iteration 0 runs at the initial denoise, and iteration k at
+* the reference is measured once, from the original image, and reused by every
+  pass;
+* pass 0 runs at the initial denoise, and pass k at
   ``initial + (final - initial) * curve(k / (loops - 1))``;
-* the seed advances by one per iteration;
-* each iteration's corrected output is the next iteration's input.
+* the seed advances by one per pass;
+* each pass's corrected output is the next pass's input;
+* with a mask, the untouched area is pasted back from the original after each
+  pass, which is what ``apply_overlay`` does there — without it that area
+  would be re-encoded and re-decoded on every pass and slowly soften.
 
-Unlike the latent-space nodes, this one is model-agnostic for free: it works
-on decoded pixels, so the latent's channel count never enters into it.
+Unlike the latent-space nodes this one is model-agnostic for free: it works on
+decoded pixels, so the latent's channel count never enters into it.
 """
 
 import logging
@@ -43,16 +47,18 @@ from ..a1111_cc import color as C
 log = logging.getLogger(__name__)
 
 CURVES = ["Linear", "Aggressive", "Lazy"]
+SEED_MASK = 0xffffffffffffffff
+MAX_LIGHTNESS_GAIN = 2.0
 
 
 def denoise_for_iteration(loop: int, loops: int, initial: float, final: float,
                           curve: str) -> float:
-    """The denoise A1111's loopback would use on iteration ``loop``.
+    """The denoise A1111's loopback uses on pass ``loop`` (0-based).
 
-    ``loop`` is 1-based here, matching the script: iteration 0 always runs at
-    ``initial``, and the curve only starts applying from the second pass.
+    Pass 0 always runs at ``initial``; the curve applies from the second pass
+    onward, reaching ``final`` exactly on the last one.
     """
-    if loops <= 1:
+    if loops <= 1 or loop <= 0:
         return initial
 
     progress = loop / (loops - 1)
@@ -78,8 +84,9 @@ class A1111Loopback:
                 "positive": ("CONDITIONING",),
                 "negative": ("CONDITIONING",),
                 "image": ("IMAGE", {"tooltip": "The starting image. Its colours become the "
-                                               "anchor every pass is corrected against."}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff,
+                                               "anchor every pass is corrected against. "
+                                               "Sides are cropped to what the VAE accepts."}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": SEED_MASK,
                                  "control_after_generate": True,
                                  "tooltip": "Advances by one on each pass, as the script does."}),
                 "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
@@ -111,16 +118,27 @@ class A1111Loopback:
                     "tooltip": "Correct every pass against the original image — the whole "
                                "point of the chain. Turn it off to see the drift it prevents.",
                 }),
-                "hold_exposure": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "Also pin lightness to the original. A1111 never did this — "
-                               "its blend takes lightness from the generated image, so a long "
-                               "chain can still wander brighter or darker while its colour "
-                               "stays put. Switch on when the chain drifts in exposure.",
+                "hold_exposure": ("FLOAT", {
+                    "default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                    "tooltip": "Also pull lightness back towards the original (0 = off).\n"
+                               "A1111 never did this: its blend takes lightness from the "
+                               "generated image, so a long chain holds its colour but can "
+                               "still wander brighter or darker. This matches the average "
+                               "and spread of lightness rather than its whole curve, so "
+                               "deliberate changes in lighting survive.",
+                }),
+                "keep_all_passes": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Return every pass as a batch. Turn off for long chains at "
+                               "high resolution, where holding them all costs real memory.",
                 }),
             },
             "optional": {
-                "mask": ("MASK", {"tooltip": "Restrict sampling to this area, as inpainting."}),
+                "mask": ("MASK", {
+                    "tooltip": "Sample only inside this area. Everything outside is pasted "
+                               "back from the original after each pass, so it does not "
+                               "soften through repeated encoding.",
+                }),
             },
         }
 
@@ -135,52 +153,81 @@ class A1111Loopback:
 
     def run(self, model, vae, positive, negative, image, seed, steps, cfg,
             sampler_name, scheduler, loops, denoise, final_denoise,
-            denoise_curve, color_correction, hold_exposure=False, mask=None):
+            denoise_curve, color_correction, hold_exposure=0.0,
+            keep_all_passes=True, mask=None):
 
-        # Measured once, from the original image, and never recomputed — this
-        # is what stops the colour walking away over a long chain.
-        reference_u8 = None
+        if image.shape[-1] == 1:
+            image = image.repeat(1, 1, 1, 3)        # grayscale IMAGE, as the VAE wants 3
+
+        if hold_exposure > 0.0 and not color_correction:
+            log.warning("A1111 Loopback: hold_exposure does nothing while "
+                        "color_correction is off.")
+
+        # Measured once, from the original, and never recomputed — this is what
+        # stops the colour walking away over a long chain. Stored as LAB, which
+        # is the form both the match and the lightness pin need.
+        reference_lab = None
         if color_correction:
-            reference_u8 = self._to_u8(image)
+            reference_lab = np.stack([C.rgb_to_lab(frame)
+                                      for frame in self._to_u8(image)], axis=0)
 
         current = image
-        current_seed = int(seed)
-        current_denoise = float(denoise)
+        original = image
         passes = []
-
+        warned = set()
         progress = comfy.utils.ProgressBar(loops)
 
         for index in range(loops):
-            latent = {"samples": vae.encode(current[:, :, :, :3])}
+            current_denoise = denoise_for_iteration(
+                index, loops, float(denoise), float(final_denoise), denoise_curve)
+            current_seed = (int(seed) + index) & SEED_MASK   # never overflow manual_seed
+
+            latent = {"samples": vae.encode(current)}
             if mask is not None:
                 latent["noise_mask"] = mask
 
-            sampled, = nodes.common_ksampler(
-                model, current_seed, steps, cfg, sampler_name, scheduler,
-                positive, negative, latent, denoise=current_denoise,
-            )
+            if current_denoise <= 0.0:
+                # ComfyUI builds an empty sigma schedule at zero denoise and the
+                # sampler then indexes into it. A1111 simply runs no steps.
+                sampled = latent
+            else:
+                sampled, = nodes.common_ksampler(
+                    model, current_seed, steps, cfg, sampler_name, scheduler,
+                    positive, negative, latent, denoise=current_denoise,
+                )
 
             decoded = vae.decode(sampled["samples"])
             if decoded.ndim == 5:        # video models hand back frames
                 decoded = decoded.reshape(-1, *decoded.shape[-3:])
 
             if color_correction:
-                decoded = self._correct(decoded, reference_u8, hold_exposure)
+                decoded = self._correct(decoded, reference_lab, hold_exposure, warned)
 
-            log.info("A1111 Loopback: pass %d/%d at denoise %.3f, seed %d",
+            if mask is not None:
+                decoded = self._paste_back(decoded, original, mask)
+
+            log.info("A1111 Loopback: pass %d/%d, denoise %.3f, seed %d",
                      index + 1, loops, current_denoise, current_seed)
 
-            passes.append(decoded)
+            if keep_all_passes:
+                passes.append(decoded)
             current = decoded
-            current_seed += 1
-            current_denoise = denoise_for_iteration(
-                index + 1, loops, float(denoise), float(final_denoise), denoise_curve)
             progress.update(1)
 
-        # Every pass comes out as a batch so the progression is visible, with
-        # the last one also given on its own for wiring onward.
-        all_passes = torch.cat(passes, dim=0) if len(passes) > 1 else passes[0]
-        return (all_passes, passes[-1])
+        final = current
+        if not keep_all_passes or len(passes) == 1:
+            return (final, final)
+
+        shapes = {tuple(p.shape[1:]) for p in passes}
+        if len(shapes) > 1:
+            # A video VAE can hand back a different frame count per pass; those
+            # cannot be stacked, and failing at the very end of a long chain
+            # would be the worst possible moment.
+            log.warning("A1111 Loopback: passes came back at different sizes %s; "
+                        "returning the last one only.", sorted(shapes))
+            return (final, final)
+
+        return (torch.cat(passes, dim=0), final)
 
     # -- helpers ----------------------------------------------------------- #
 
@@ -190,26 +237,86 @@ class A1111Loopback:
         return np.rint(x.numpy() * 255.0).astype(np.uint8)
 
     @staticmethod
-    def _correct(decoded: torch.Tensor, reference_u8: np.ndarray,
-                 hold_exposure: bool = False) -> torch.Tensor:
+    def _pin_lightness(rgb_u8: np.ndarray, reference_lab: np.ndarray,
+                       strength: float) -> np.ndarray:
+        """Pull lightness towards the reference's average and spread.
+
+        Deliberately not a histogram match: that would impose the original's
+        whole tonal curve, flattening any lighting the chain introduced on
+        purpose and banding flat areas at 8 bits. Matching the first two
+        moments corrects drift and leaves the rest alone.
+        """
+        lab = C.rgb_to_lab(rgb_u8).astype(np.float32)
+        lightness = lab[..., 0]
+        ref = reference_lab[..., 0].astype(np.float32)
+
+        src_mean, src_std = lightness.mean(), lightness.std()
+        gain = float(np.clip(ref.std() / (src_std + 1e-6),
+                             1.0 / MAX_LIGHTNESS_GAIN, MAX_LIGHTNESS_GAIN))
+        target = (lightness - src_mean) * gain + ref.mean()
+
+        lab[..., 0] = lightness + strength * (target - lightness)
+        return C.lab_to_rgb(np.rint(lab).clip(0, 255).astype(np.uint8))
+
+    @staticmethod
+    def _correct(decoded: torch.Tensor, reference_lab: np.ndarray,
+                 hold_exposure: float, warned: set) -> torch.Tensor:
         """Apply the A1111 correction to each frame against the fixed reference."""
         source = A1111Loopback._to_u8(decoded)
+        frames, ref_frames = source.shape[0], reference_lab.shape[0]
+        if ref_frames != frames and ref_frames != 1 and "frames" not in warned:
+            warned.add("frames")
+            log.warning("A1111 Loopback: %d frame(s) came back against %d reference "
+                        "frame(s); using the first reference for all of them.",
+                        frames, ref_frames)
+
         out = np.empty_like(source)
-        for i in range(source.shape[0]):
-            reference = reference_u8[i] if reference_u8.shape[0] == source.shape[0] \
-                else reference_u8[0]
+        for i in range(frames):
+            ref_lab = reference_lab[i] if ref_frames == frames else reference_lab[0]
             src = source[i]
-            matched = C.match_histograms_u8(C.rgb_to_lab(src), C.rgb_to_lab(reference))
-            if hold_exposure:
-                # The matched L already sits on the reference's distribution.
-                # Keeping it, rather than handing lightness back to the
-                # generated frame, is what pins exposure as well as colour.
-                out[i] = C.lab_to_rgb(matched)
-            else:
-                out[i] = C.a1111_luminosity_blend(C.lab_to_rgb(matched), src)
+            matched = C.match_histograms_u8(C.rgb_to_lab(src), ref_lab)
+            corrected = C.a1111_luminosity_blend(C.lab_to_rgb(matched), src)
+            if hold_exposure > 0.0:
+                corrected = A1111Loopback._pin_lightness(corrected, ref_lab, hold_exposure)
+            out[i] = corrected
 
         result = torch.from_numpy(out.astype(np.float32) / 255.0)
         return result.to(device=decoded.device, dtype=decoded.dtype)
+
+    @staticmethod
+    def _paste_back(decoded: torch.Tensor, original: torch.Tensor,
+                    mask: torch.Tensor) -> torch.Tensor:
+        """Restore the unmasked area from the original, as ``apply_overlay`` does.
+
+        Without this the area the sampler never touched still goes through
+        encode and decode on every pass, and a long chain visibly softens it.
+        """
+        height, width = decoded.shape[1], decoded.shape[2]
+
+        source = original.to(device=decoded.device, dtype=decoded.dtype)
+        if source.shape[1:3] != (height, width):
+            top = max(0, (source.shape[1] - height) // 2)
+            left = max(0, (source.shape[2] - width) // 2)
+            source = source[:, top:top + height, left:left + width, :]
+        if source.shape[1:3] != (height, width):
+            log.warning("A1111 Loopback: cannot line the original up with the result "
+                        "(%s against %s); skipping the paste-back.",
+                        tuple(source.shape[1:3]), (height, width))
+            return decoded
+        if source.shape[0] != decoded.shape[0]:
+            source = source[:1].expand(decoded.shape[0], -1, -1, -1)
+
+        weights = mask.to(device=decoded.device, dtype=decoded.dtype)
+        if weights.ndim == 2:
+            weights = weights.unsqueeze(0)
+        weights = torch.nn.functional.interpolate(
+            weights.unsqueeze(1), size=(height, width),
+            mode="bilinear", align_corners=False).squeeze(1)
+        if weights.shape[0] != decoded.shape[0]:
+            weights = weights[:1].expand(decoded.shape[0], -1, -1)
+        weights = weights.clamp(0.0, 1.0).unsqueeze(-1)
+
+        return decoded * weights + source * (1.0 - weights)
 
 
 NODE_CLASS_MAPPINGS = {

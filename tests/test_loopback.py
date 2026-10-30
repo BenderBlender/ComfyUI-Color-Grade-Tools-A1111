@@ -132,16 +132,17 @@ def lab_distance(a: torch.Tensor, b: torch.Tensor) -> float:
 
 def run_loopback(loops=4, color_correction=True, cast=(1.10, 1.0, 0.92),
                  mask=None, seed=100, denoise=0.75, final_denoise=0.5,
-                 curve="Linear", hold_exposure=False):
+                 curve="Linear", hold_exposure=0.0, keep_all_passes=True,
+                 vae=None):
     sampler = FakeSampler(cast)
     nodes_stub.common_ksampler = sampler
     image = gradient_image()
     all_passes, final = A1111Loopback().run(
-        model=None, vae=FakeVAE(), positive=None, negative=None, image=image,
+        model=None, vae=vae or FakeVAE(), positive=None, negative=None, image=image,
         seed=seed, steps=4, cfg=7.0, sampler_name="euler", scheduler="normal",
         loops=loops, denoise=denoise, final_denoise=final_denoise,
         denoise_curve=curve, color_correction=color_correction,
-        hold_exposure=hold_exposure, mask=mask,
+        hold_exposure=hold_exposure, keep_all_passes=keep_all_passes, mask=mask,
     )
     return image, all_passes, final, sampler
 
@@ -240,7 +241,7 @@ def test_a1111_correction_does_not_touch_exposure():
 def test_hold_exposure_also_pins_lightness():
     """The optional extension: match L as well, which A1111 never did."""
     image, _, plain, _ = run_loopback(loops=6, color_correction=True)
-    _, _, pinned, _ = run_loopback(loops=6, color_correction=True, hold_exposure=True)
+    _, _, pinned, _ = run_loopback(loops=6, color_correction=True, hold_exposure=1.0)
     plain_L, _ = _lab_split(plain, image)
     pinned_L, pinned_ab = _lab_split(pinned, image)
 
@@ -311,12 +312,138 @@ def test_each_pass_feeds_the_next():
         model=None, vae=FakeVAE(), positive=None, negative=None,
         image=gradient_image(), seed=0, steps=4, cfg=7.0, sampler_name="euler",
         scheduler="normal", loops=3, denoise=0.75, final_denoise=0.5,
-        denoise_curve="Linear", color_correction=False, hold_exposure=False,
+        denoise_curve="Linear", color_correction=False, hold_exposure=0.0,
         mask=None,
     )
     assert len(seen) == 3
     assert not torch.equal(seen[0], seen[1]), "second pass got the original image again"
     assert not torch.equal(seen[1], seen[2]), "third pass got a stale image"
+
+
+# --------------------------------------------------------------------------- #
+# edges that would otherwise fail at the end of a long chain
+# --------------------------------------------------------------------------- #
+
+def test_zero_denoise_skips_sampling_instead_of_crashing():
+    """ComfyUI builds an empty sigma schedule at denoise 0 and then indexes it."""
+    _, _, final, sampler = run_loopback(loops=3, denoise=0.6, final_denoise=0.0)
+    assert len(sampler.calls) == 2, f"the zero-denoise pass should be skipped: {sampler.calls}"
+    assert torch.isfinite(final).all()
+
+
+def test_all_passes_zero_denoise_is_a_no_op_chain():
+    image, _, final, sampler = run_loopback(loops=3, denoise=0.0, final_denoise=0.0,
+                                            color_correction=False)
+    assert sampler.calls == []
+    assert torch.allclose(final, image, atol=1e-6)
+
+
+def test_seed_does_not_overflow():
+    """manual_seed rejects anything past 2**64, which a long chain would reach."""
+    top = 0xffffffffffffffff
+    _, _, _, sampler = run_loopback(loops=4, seed=top)
+    seeds = [c["seed"] for c in sampler.calls]
+    assert all(0 <= s <= top for s in seeds), seeds
+    assert seeds[0] == top
+
+
+def test_mask_paste_back_keeps_the_untouched_area_exact():
+    """Outside the mask the original must survive, not a re-encoded copy."""
+    mask = torch.zeros(1, 64, 64)
+    mask[:, :, 32:] = 1.0
+    image, _, final, _ = run_loopback(loops=4, mask=mask, cast=(1.4, 1.0, 0.7))
+
+    left_in, left_out = image[:, :, :30], final[:, :, :30]
+    assert torch.allclose(left_out, left_in, atol=2 / 255), \
+        f"unmasked side drifted by {float((left_out - left_in).abs().max()):.4f}"
+    right_in, right_out = image[:, :, 34:], final[:, :, 34:]
+    assert not torch.allclose(right_out, right_in, atol=2 / 255), \
+        "masked side should have changed"
+    print("  unmasked side preserved, masked side changed")
+
+
+def test_grayscale_image_is_accepted():
+    sampler = FakeSampler()
+    nodes_stub.common_ksampler = sampler
+    grey = gradient_image()[..., :1]
+    _, final = A1111Loopback().run(
+        model=None, vae=FakeVAE(), positive=None, negative=None, image=grey,
+        seed=0, steps=4, cfg=7.0, sampler_name="euler", scheduler="normal",
+        loops=2, denoise=0.6, final_denoise=0.5, denoise_curve="Linear",
+        color_correction=True, hold_exposure=0.0, keep_all_passes=True, mask=None,
+    )
+    assert final.shape[-1] == 3, final.shape
+
+
+def test_keep_all_passes_off_returns_one_frame():
+    _, all_passes, final, _ = run_loopback(loops=5, keep_all_passes=False)
+    assert all_passes.shape[0] == 1
+    assert torch.equal(all_passes, final)
+
+
+class CroppingVAE(FakeVAE):
+    """Mimics ComfyUI cropping the input to a multiple of eight."""
+
+    def encode(self, pixels):
+        h = (pixels.shape[1] // 8) * 8
+        w = (pixels.shape[2] // 8) * 8
+        return super().encode(pixels[:, :h, :w, :])
+
+
+def test_vae_cropping_is_tolerated():
+    sampler = FakeSampler()
+    nodes_stub.common_ksampler = sampler
+    odd = gradient_image(70)          # not a multiple of 8
+    all_passes, final = A1111Loopback().run(
+        model=None, vae=CroppingVAE(), positive=None, negative=None, image=odd,
+        seed=0, steps=4, cfg=7.0, sampler_name="euler", scheduler="normal",
+        loops=3, denoise=0.6, final_denoise=0.5, denoise_curve="Linear",
+        color_correction=True, hold_exposure=0.0, keep_all_passes=True, mask=None,
+    )
+    assert final.shape[1] == final.shape[2] == 64, final.shape
+    assert all_passes.shape[0] == 3
+
+
+class ShrinkingVAE(FakeVAE):
+    """Hands back a slightly smaller image each pass.
+
+    Differing frame counts stack fine along the batch axis; differing width or
+    height is what makes the concatenation at the end of the chain throw, and
+    that is the worst moment to discover it.
+    """
+
+    def __init__(self):
+        self.calls = 0
+
+    def decode(self, samples):
+        self.calls += 1
+        out = super().decode(samples)
+        trim = self.calls - 1
+        return out[:, : out.shape[1] - trim, : out.shape[2] - trim, :].contiguous()
+
+
+def test_varying_sizes_do_not_crash_at_the_end():
+    sampler = FakeSampler()
+    nodes_stub.common_ksampler = sampler
+    all_passes, final = A1111Loopback().run(
+        model=None, vae=ShrinkingVAE(), positive=None, negative=None,
+        image=gradient_image(), seed=0, steps=4, cfg=7.0, sampler_name="euler",
+        scheduler="normal", loops=3, denoise=0.6, final_denoise=0.5,
+        denoise_curve="Linear", color_correction=True, hold_exposure=0.0,
+        keep_all_passes=True, mask=None,
+    )
+    assert torch.equal(all_passes, final), "should fall back to the last pass alone"
+
+
+def test_hold_exposure_leaves_deliberate_contrast_alone():
+    """Matching two moments, not the whole curve, must not flatten the image."""
+    image, _, plain, _ = run_loopback(loops=4, color_correction=True)
+    _, _, pinned, _ = run_loopback(loops=4, color_correction=True, hold_exposure=1.0)
+
+    spread = lambda t: float(t[0].std())
+    assert spread(pinned) > spread(image) * 0.8, \
+        f"contrast collapsed: {spread(pinned):.4f} against {spread(image):.4f}"
+    print(f"  contrast kept: original {spread(image):.4f}, pinned {spread(pinned):.4f}")
 
 
 if __name__ == "__main__":

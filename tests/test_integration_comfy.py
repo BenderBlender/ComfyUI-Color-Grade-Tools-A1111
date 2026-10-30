@@ -307,15 +307,16 @@ def test_loopback_chain(pack, model, vae, positive, negative, reference_image,
         return float(d[0]), float((d[1] + d[2]) / 2)
 
     results = {}
-    for label, correction, exposure in (("off", False, False),
-                                        ("a1111", True, False),
-                                        ("hold_exposure", True, True)):
+    for label, correction, exposure in (("off", False, 0.0),
+                                        ("a1111", True, 0.0),
+                                        ("hold_exposure", True, 1.0)):
         passes, final = node.run(
             model=model, vae=vae, positive=positive, negative=negative,
             image=reference_image, seed=4242, steps=16, cfg=7.0,
             sampler_name="dpmpp_2m", scheduler="karras", loops=loops,
             denoise=0.65, final_denoise=0.45, denoise_curve="Linear",
             color_correction=correction, hold_exposure=exposure,
+            keep_all_passes=True,
         )
         final_u8 = to_numpy(final)
         lightness, chroma = split(final_u8)
