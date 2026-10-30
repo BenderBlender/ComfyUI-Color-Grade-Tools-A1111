@@ -512,6 +512,84 @@ def test_the_grade_survives_a_model_that_pushes_back():
           ", ".join(f"{k:.0%} kept -> {v:.2f}" for k, v in results.items()))
 
 
+# --------------------------------------------------------------------------- #
+# the presets
+# --------------------------------------------------------------------------- #
+
+def _presets():
+    from a1111_cc import presets as P
+    return P.BUILT_IN
+
+
+def test_every_preset_is_a_sane_grade():
+    """One of these shipped as a black frame.
+
+    gain and gamma are absolute values around one, while lift is an offset
+    from zero. Writing -0.06 for a gain, meaning "a little darker", asks for
+    a gain of -0.06 instead of 0.94 — and the picture goes out.
+    """
+    out_of_range = []
+    for name, values in _presets().items():
+        for key in ("gain_master", "gamma_master"):
+            if not 0.4 <= values[key] <= 1.6:
+                out_of_range.append((name, key, values[key]))
+        if not -0.3 <= values["lift_master"] <= 0.3:
+            out_of_range.append((name, "lift_master", values["lift_master"]))
+    assert not out_of_range, out_of_range
+
+
+def test_no_preset_destroys_the_picture():
+    """Applied to a ramp, every look must still be a picture."""
+    N = _node_module()
+    base = ramp()
+    broken = []
+    for name, values in _presets().items():
+        graded = G.apply_grade(base, N._grade_from(values)).clamp(0, 1)
+        mean = float(graded.mean())
+        spread = float(graded.std())
+        if not 0.1 < mean < 0.9 or spread < 0.1:
+            broken.append((name, round(mean, 3), round(spread, 3)))
+    assert not broken, broken
+
+
+def test_every_preset_is_visibly_different_from_neutral():
+    """A look nobody can see is not a look.
+
+    Half of them were once so gentle that Teal and orange, Warm, Cool and
+    Bleach bypass were indistinguishable from doing nothing at all.
+    """
+    N = _node_module()
+    base = ramp()
+    neutral = G.apply_grade(base, G.Grade())
+
+    faint = []
+    for name, values in _presets().items():
+        if name == "Neutral":
+            continue
+        graded = G.apply_grade(base, N._grade_from(values)).clamp(0, 1)
+        difference = float((graded - neutral).abs().mean())
+        if difference < 0.02:
+            faint.append((name, round(difference, 4)))
+    assert not faint, faint
+    print(f"  {len(_presets()) - 1} looks, all visible")
+
+
+def test_presets_differ_from_each_other():
+    """Two names for the same grade would be two names for nothing."""
+    N = _node_module()
+    base = ramp()
+    rendered = {name: G.apply_grade(base, N._grade_from(values)).clamp(0, 1)
+                for name, values in _presets().items()}
+
+    names = sorted(rendered)
+    duplicates = []
+    for i, first in enumerate(names):
+        for second in names[i + 1:]:
+            if float((rendered[first] - rendered[second]).abs().mean()) < 0.01:
+                duplicates.append((first, second))
+    assert not duplicates, duplicates
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

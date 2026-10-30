@@ -264,6 +264,94 @@ def demo_luts(pack, image, out):
 
 # --------------------------------------------------------------------------- #
 
+def demo_with_model(pack, image, checkpoint, out, size=1024, steps=22):
+    """The two places a grade can be applied, and what holding colour does."""
+    import comfy.sd
+    import nodes as comfy_nodes
+    import torch
+
+    print(" loading the checkpoint")
+    memory("before loading")
+    started = time.time()
+    model, clip, vae = comfy.sd.load_checkpoint_guess_config(
+        checkpoint, output_vae=True, output_clip=True)[:3]
+    print(f"   loaded in {time.time() - started:.0f}s")
+    memory("after loading")
+
+    try:
+        text = comfy_nodes.CLIPTextEncode()
+        positive, = text.encode(clip, "a harbour at dawn, boats, wet stone, photograph")
+        negative, = text.encode(clip, "blurry, low quality")
+
+        latent, = comfy_nodes.VAEEncode().encode(vae, image)
+        decode = comfy_nodes.VAEDecode()
+
+        def sample(patched, source, denoise=1.0, seed=99001):
+            out_latent, = comfy_nodes.common_ksampler(
+                patched, seed, steps, 6.0, "dpmpp_2m", "karras",
+                positive, negative, source, denoise=denoise)
+            return to_u8(decode.decode(vae, out_latent)[0])
+
+        empty, = comfy_nodes.EmptyLatentImage().generate(size, size, 1)
+
+        # 1. the same grade during sampling and after it
+        grade_node = pack.NODE_CLASS_MAPPINGS["LatentColorGrade"]()
+        image_node = pack.NODE_CLASS_MAPPINGS["ImageColorGrade"]()
+        controls = {name: spec[1]["default"] for name, spec
+                    in image_node.INPUT_TYPES()["required"].items() if name != "image"}
+        look = dict(controls)
+        look.update({"lift_b": 0.045, "gain_r": 0.055, "gain_b": -0.040,
+                     "saturation": 1.10})
+
+        print(" grade during sampling vs after")
+        plain = sample(model, empty)
+        graded_model, = grade_node.apply(model, strength=0.6, start_percent=0.30,
+                                         end_percent=0.95, **look)
+        during = sample(graded_model, empty)
+
+        plain_tensor = torch.from_numpy(plain.astype(np.float32) / 255).unsqueeze(0)
+        after, = image_node.apply(plain_tensor, **look)
+
+        sheet([(plain, "no grade", "the model left alone"),
+               (to_u8(after), "graded afterwards", "a filter over a finished picture"),
+               (during, "graded while sampling", "the model composed it this way")],
+              os.path.join(out, "20-during-vs-after.png"),
+              title="The same wheels, applied in two places")
+
+        # 2. holding colour through an img2img pass
+        print(" holding colour through img2img")
+        drifted = sample(model, latent, denoise=0.75, seed=4242)
+        guidance = pack.NODE_CLASS_MAPPINGS["ApplyLatentColorGuidance"]()
+        held_model, = guidance.apply(model, latent, strength=0.6, start_percent=0.15,
+                                     end_percent=0.9, method="auto", space="auto",
+                                     max_gain=2.0, lowpass=0)
+        held = sample(held_model, latent, denoise=0.75, seed=4242)
+
+        scopes = pack.NODE_CLASS_MAPPINGS["ColorKitScopes"]()
+        sheet([(to_u8(image), "the source", "the colours to keep"),
+               (drifted, "img2img at 0.75", "the palette has wandered"),
+               (held, "the same, colour held", "same seed, same prompt")],
+              os.path.join(out, "21-holding-colour.png"),
+              title="An img2img pass drifts; the guidance node stops it")
+
+        drift_scope, _ = scopes.measure(
+            torch.from_numpy(drifted.astype(np.float32) / 255).unsqueeze(0),
+            mode="vectorscope", size=360)
+        held_scope, _ = scopes.measure(
+            torch.from_numpy(held.astype(np.float32) / 255).unsqueeze(0),
+            mode="vectorscope", size=360)
+        source_scope, _ = scopes.measure(image, mode="vectorscope", size=360)
+        sheet([(to_u8(source_scope), "source", ""),
+               (to_u8(drift_scope), "drifted", "the cloud has moved"),
+               (to_u8(held_scope), "held", "back where it started")],
+              os.path.join(out, "22-holding-colour-scopes.png"),
+              title="The same three, on a vectorscope")
+
+    finally:
+        model = clip = vae = None
+        free_everything("the checkpoint")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--comfy", required=True)
@@ -302,6 +390,10 @@ def main():
         demo_reference(pack, image, reference, out)
     print(f"\n  no model needed so far: {time.time() - started:.0f}s")
     memory("after the model-free figures")
+
+    if args.with_model:
+        demo_with_model(pack, image, args.with_model, out, size=args.size)
+        print(f"\n  everything: {time.time() - started:.0f}s")
 
 
 if __name__ == "__main__":
