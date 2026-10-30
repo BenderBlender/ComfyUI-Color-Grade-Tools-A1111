@@ -15,6 +15,7 @@ __version__ = "1.0.0"
 _MODULES = [
     "a1111_nodes.image_color_correction",
     "a1111_nodes.latent_nodes",
+    "a1111_nodes.loopback",
     "a1111_nodes.legacy",
 ]
 

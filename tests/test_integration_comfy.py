@@ -287,6 +287,57 @@ def test_corrector_on_this_format(pack, model, latent, report):
     return {"latent_error_before": before, "latent_error_after": after}
 
 
+def test_loopback_chain(pack, model, vae, positive, negative, reference_image,
+                        report, outdir, loops=3):
+    """A real loopback chain: does the palette actually hold across passes?
+
+    Deliberately small — 512px, a few passes — because the claim under test is
+    about drift between passes, not about image quality.
+    """
+    import cv2
+    import numpy as np
+
+    node = pack.NODE_CLASS_MAPPINGS["A1111Loopback"]()
+    ref_u8 = to_numpy(reference_image)
+
+    def split(img_u8):
+        a = cv2.cvtColor(img_u8, cv2.COLOR_RGB2LAB).astype(np.float32).reshape(-1, 3).mean(0)
+        b = cv2.cvtColor(ref_u8, cv2.COLOR_RGB2LAB).astype(np.float32).reshape(-1, 3).mean(0)
+        d = np.abs(a - b)
+        return float(d[0]), float((d[1] + d[2]) / 2)
+
+    results = {}
+    for label, correction, exposure in (("off", False, False),
+                                        ("a1111", True, False),
+                                        ("hold_exposure", True, True)):
+        passes, final = node.run(
+            model=model, vae=vae, positive=positive, negative=negative,
+            image=reference_image, seed=4242, steps=16, cfg=7.0,
+            sampler_name="dpmpp_2m", scheduler="karras", loops=loops,
+            denoise=0.65, final_denoise=0.45, denoise_curve="Linear",
+            color_correction=correction, hold_exposure=exposure,
+        )
+        final_u8 = to_numpy(final)
+        lightness, chroma = split(final_u8)
+        results[label] = {"lightness": lightness, "chroma": chroma}
+        if outdir:
+            save_png(final_u8, os.path.join(outdir, f"loopback_{label}.png"))
+            for i in range(passes.shape[0]):
+                save_png(to_numpy(passes[i:i + 1]),
+                         os.path.join(outdir, f"loopback_{label}_pass{i + 1}.png"))
+
+    report(f"\n  loopback, {loops} passes, drift from the first image (LAB levels):")
+    report(f"    {'mode':16s} {'lightness':>10s} {'chroma':>8s}")
+    for label, values in results.items():
+        report(f"    {label:16s} {values['lightness']:10.2f} {values['chroma']:8.2f}")
+
+    assert results["a1111"]["chroma"] < results["off"]["chroma"], \
+        "correction did not hold the colour"
+    assert results["hold_exposure"]["lightness"] < results["a1111"]["lightness"], \
+        "hold_exposure did not pin the lightness"
+    return {"loopback": results}
+
+
 def test_image_node_against_a_known_cast(pack, reference_image, report, outdir):
     """The image node should remove a deliberate cast and keep the brightness."""
     import torch
@@ -336,6 +387,8 @@ def main():
     ap.add_argument("--image", help="reference image; a synthetic plate is used otherwise")
     ap.add_argument("--outdir", default="", help="where to write result images")
     ap.add_argument("--prompt", default="a photograph, natural light, fine detail")
+    ap.add_argument("--loops", type=int, default=0,
+                    help="also run a loopback chain of this many passes (0 = skip)")
     args = ap.parse_args()
 
     sys.path.insert(0, args.comfy)
@@ -394,6 +447,10 @@ def main():
         outdir = os.path.join(args.outdir, label) if args.outdir else ""
         section.update(test_guidance_pulls_colour_back(
             pack, model, vae, positive, negative, reference, report, outdir))
+        if args.loops > 0:
+            section.update(test_loopback_chain(
+                pack, model, vae, positive, negative, reference, report, outdir,
+                loops=args.loops))
         results[label] = section
 
         model = clip = vae = positive = negative = latent = None

@@ -2,9 +2,9 @@
 ====================================================================
 SD1.5: photon_v1.safetensors
 ====================================================================
-  [memory before load] VRAM 1.5/24.0 GB  RAM 21/128 GB
-  loaded in 0.6s
-  [memory after load] VRAM 1.5/24.0 GB  RAM 23/128 GB
+  [memory before load] VRAM 1.5/24.0 GB  RAM 18/128 GB
+  loaded in 154.9s
+  [memory after load] VRAM 1.5/24.0 GB  RAM 20/128 GB
 
   detected space: <LatentColorSpace rgb_proj C=4 ndim=4>
   process_in scale factor: 0.18215  (the original node skipped this entirely)
@@ -28,11 +28,17 @@ SD1.5: photon_v1.safetensors
     brightness preserved to 0.00097 (a1111 blend keeps the original's luma)
 
   colour distance from the reference (LAB levels, lower is closer):
-    without guidance   mean   6.09   spread   5.76   (1.0s)
-    with guidance      mean   4.76   spread   5.58   (0.9s)
+    without guidance   mean   6.09   spread   5.76   (0.9s)
+    with guidance      mean   4.76   spread   5.58   (1.0s)
     improvement         21.8%
     detail energy        6.81 ->   7.60 (+11.6%)
-  [memory after unload SD1.5] VRAM 1.6/24.0 GB  RAM 22/128 GB
+
+  loopback, 3 passes, drift from the first image (LAB levels):
+    mode              lightness   chroma
+    off                    5.93     4.77
+    a1111                  5.51     0.13
+    hold_exposure          0.14     0.07
+  [memory after unload SD1.5] VRAM 1.6/24.0 GB  RAM 19/128 GB
 
 ====================================================================
 all integration checks passed
