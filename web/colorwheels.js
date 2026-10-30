@@ -196,11 +196,16 @@ function makeWidget() {
     options: { serialize: false },
     value: null,
 
+    // The 1.5x frontend also asks for the size without a width. layout(undefined)
+    // came back NaN, every widget below got y = NaN and was never drawn — the
+    // saturation and contrast sliders vanished from the node (30.10).
     computeSize(width) {
-      return [width, layout(width).height];
+      const w = Number.isFinite(width) && width > 0 ? width : (this.lastWidth ?? 640);
+      return [w, layout(w).height];
     },
 
     draw(ctx, node, width, y) {
+      this.lastWidth = width;
       const rects = wheelRects(width, y);
       ctx.save();
       ctx.textAlign = "center";
@@ -458,9 +463,12 @@ app.registerExtension({
           callback: async (value, opts, event, parentMenu) => {
             const { builtin, user } = await fetchPresets();
             const entries = { ...builtin, ...user };
+            // `extra: node` as the frontend's own node menus pass it: without it the
+            // frontend reads parentMenu.options.extra, and its menu objects have no
+            // options — an uncaught TypeError on every submenu (30.10).
             new LiteGraph.ContextMenu(
               presetMenu(node, entries, (name, values) => applyPreset(node, values)),
-              { event, parentMenu, title: "Apply a preset" },
+              { event, parentMenu, title: "Apply a preset", extra: node },
             );
           },
         },
@@ -484,7 +492,7 @@ app.registerExtension({
             const { user } = await fetchPresets();
             new LiteGraph.ContextMenu(
               presetMenu(node, user, async (name) => { await deletePreset(name); }),
-              { event, parentMenu, title: "Delete which?" },
+              { event, parentMenu, title: "Delete which?", extra: node },
             );
           },
         },
@@ -494,7 +502,7 @@ app.registerExtension({
             node.colorkitShowNumbers = !node.colorkitShowNumbers;
             if (node.colorkitShowNumbers) showNumeric(node);
             else hideNumeric(node);
-            node.size[1] = node.computeSize()[1];
+            fitToWidgets(node);
             node.setDirtyCanvas(true, true);
           },
         },
@@ -515,12 +523,28 @@ function hideNumeric(node) {
     w.colorkitType = w.colorkitType ?? w.type;
     w.type = "colorkit_hidden";
     w.computeSize = () => [0, -4];
+    w.hidden = true;            // what the 1.5x frontend's layout reads
   }
+}
+
+// The 1.5x frontend lays widgets out in node.arrange() and does not re-run it when
+// widgets are shown or hidden, and its computeSize() came out shorter than the
+// laid-out list: the sliders stayed at y = 0, then the last ones were clipped
+// (30.10). Arrange, then size the node to the last visible widget; never narrower.
+function fitToWidgets(node) {
+  node.arrange?.();
+  const shown = (node.widgets ?? []).filter((w) => !w.hidden && Number.isFinite(w.y));
+  const last = shown[shown.length - 1];
+  const below = last ? last.y + (last.computedHeight ?? LiteGraph.NODE_WIDGET_HEIGHT ?? 20) + 10 : 0;
+  const height = Math.max(node.computeSize()[1], below);
+  node.setSize([Math.max(node.size[0], 640), height]);
+  node.arrange?.();
 }
 
 function showNumeric(node) {
   for (const w of node.colorkitHidden ?? []) {
     if (w.colorkitType) w.type = w.colorkitType;
     delete w.computeSize;
+    w.hidden = false;
   }
 }
