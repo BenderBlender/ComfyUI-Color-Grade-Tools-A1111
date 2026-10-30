@@ -29,8 +29,9 @@ sampler.
 
 Every other colour tool in ComfyUI recolours the finished pixels. **Grade Wheels (latent)** gives lift, gamma and gain
 to the model itself: at every step its prediction of the finished picture is moved towards your look, so light and
-shadow are drawn in it. Same direction and size as the image wheels — within 0.9–10° of hue and ×1.06–1.14 on SDXL —
-but made by the generation. `strength` is a true dial: 0.5 gives ×0.47 of the full shift.
+shadow are drawn in it. Close to the same wheels laid over afterwards — 0.4–1.4 LAB units apart on the illustration
+above, 2–4 on a photo and a painting — but made by the generation, with the fine detail kept (×0.87–1.04). Checked on
+four pictures; on a dark snowy forest scene it misses more, and the tour shows that too.
 
 Template **06** · [the tour, section 1](docs/showcase/README.md#1-grade-wheels-inside-sampling)
 
@@ -40,7 +41,8 @@ Template **06** · [the tour, section 1](docs/showcase/README.md#1-grade-wheels-
 
 Give it two pictures: yours, and anything whose colour you like — a film still, a painting, a photograph. **Latent
 Color Match** starts the run in that palette, **Latent Color Guidance** holds it while the model draws, **A1111 Color
-Correction** finishes it. On seven film frames the result went 0.79–0.99 of the way to the source's colour.
+Correction** finishes it. On seven film frames the result went 0.79–0.99 of the way to the source's colour, and
+0.62–0.98 on three more pictures.
 
 Template **08** · [section 2](docs/showcase/README.md#2-any-picture-becomes-a-palette)
 
@@ -144,23 +146,24 @@ Start with **08** and two pictures of your own: change only the colour source an
 |---|---|---|
 | Latent Color Guidance `strength` | 0.5–0.7 | Above that the model fights the correction instead of following it. |
 | Guidance `start_percent` / `end_percent` | 0.15 / 0.9 | The first predictions are featureless; the last steps settle detail. |
-| Grade Wheels (latent) `strength` | 1.0 | The full look; it scales in proportion. |
+| Grade Wheels (latent) `strength` | 1.0 | The full look; lower values scale it down, not quite in proportion (0.5 → 0.39–0.78 of it). |
 | Grade Wheels (latent) `start_percent` | 0.6 | It holds what it first sees; earlier, it also fights the model's repaint (×3.4 at 0.3). |
 | `method` / `space` | `auto` | The RGB projection — the same controls on every family. |
 | A1111 Color Correction `strength` | 0.8–1.0 | 1.0 is the webui; a little less leaves the render some of its own colour. |
 
 ## Measured, not promised
 
-Every figure below was measured on 30 October 2026 through a running ComfyUI; the pictures and the method are in
+Every figure below was measured on 30–31 October 2026 through a running ComfyUI; the pictures and the method are in
 [the tour](docs/showcase/README.md).
 
 | | Result |
 |---|---|
 | A1111 Color Correction against the webui's own code | **0 of 255** on four img2img pairs |
-| Grade Wheels (latent) against the same wheels afterwards, SDXL img2img | 0.9–10° of hue, ×1.06–1.14 of the size |
-| … strength 0.5 against 1.0 | ×0.47 of the shift |
-| … SD 3.5, a street from scratch | 10.9°, ×0.90 (the preview matrix gave 24.5°) |
-| A picture's palette, template 08, seven film frames | 0.79–0.99 of the way to the source's colour |
+| Grade Wheels (latent) against the same wheels afterwards, SDXL img2img, four pictures | 0.4–3.6 LAB units apart (4.8–6.4 on a dark snowy scene); fine detail ×0.87–1.04 |
+| … strength 0.5 against 1.0 | 0.39–0.78 of the shift |
+| … SD 3.5, a street from scratch | 8.3°, ×0.91 (the preview matrix gave 24.5°) |
+| Grade Wheels + a film frame as `anchor`, four pictures | 0.43–0.96 of the way, fine detail ×0.81–1.23 |
+| A picture's palette, template 08 | 0.79–0.99 of the way to the source's colour on the girl (seven frames), 0.62–0.98 on three more pictures |
 | Loopback, eight passes, colour drift | 6.1–7.7 without the correction, **0.3–1.3** with it |
 | Latent Color Guidance, robot img2img at denoise 0.7 | LAB distance 3.11 → 1.78 at strength 0.6 |
 | Save Grade as LUT round trip | within 3 of 255, mean 0.06 |
@@ -327,14 +330,22 @@ preview matrix: inverted, the preview fit turned warm highlights magenta at
 three to six times the asked strength. It holds the levels of the first
 prediction in its window, so it also resists what the model repaints after
 that; the window therefore starts at 0.6 by default (from 0.3 a denoise-0.7
-img2img came out 3.4 times the grade). Measured on SDXL with dpmpp_2m against
-the same wheels applied afterwards: a dusk street (txt2img) within 3° at 0.90
-of the size at strength 1.0, and 0.78 / 0.76 of the share at 0.5 / 0.25; a
-bright img2img at denoise 0.7 within 3° at 1.1 / 0.67 of the size at 1.0 / 0.5.
-SD3 / SD3.5 has measured axes too (a txt2img street: 10.9° and 0.90 of the
-size, where the preview matrix gave 24.5° and 0.82). SD1.5 was checked with
-the preview matrix and needs none (2.1°, 0.93). Other families use the
-preview matrix until they are measured.
+img2img came out 3.4 times the grade). The level map moves only the 5-px
+blurred projection and carries the fine part over: a latent pixel's projection
+is largely the latent's texture code, and a map applied pixel by pixel rescaled
+it — neon blotches under an anchor, fine detail ×0.72–1.37 without one; now
+×0.87–1.04 on four test pictures. An `anchor` sets the colourfulness target as
+well as the levels, so a bleached frame takes the colour out.
+
+Measured on SDXL with dpmpp_2m against the same wheels applied afterwards
+(31.10, the current code): img2img at denoise 0.5 lands 0.4–1.4 LAB units away
+on an illustration, 2.2–3.6 on a photo and a painting, 4.8–6.4 on a dark snowy
+forest scene (the code before missed that one too, 3.8–5.6); a dusk street
+(txt2img) within 3.8° at 0.79 of the size at strength 1.0. Strength 0.5 gives
+0.39–0.78 of the full shift, depending on the picture. SD3 / SD3.5 has measured
+axes too (a txt2img street: 8.3° and 0.91 of the size, where the preview matrix
+gave 24.5° and 0.82). SD1.5 was checked with the preview matrix and needs none
+(4.4°, 0.97). Other families use the preview matrix until they are measured.
 
 All of them take an optional `MASK`, which restricts *where the colours are
 measured* — the usual want for inpainting, where the surrounding plate would
@@ -402,10 +413,10 @@ own step count.
 
 ### Tests
 
-123 unit tests, needing only numpy and torch:
+125 unit tests, needing only numpy and torch:
 
 ```bash
-python tests/test_grading.py        # the wheels, presets, LUTs, the latent grade      (46)
+python tests/test_grading.py        # the wheels, presets, LUTs, the latent grade      (48)
 python tests/test_color.py          # image maths, incl. A1111 parity                   (15)
 python tests/test_latent_core.py    # statistics, transfers, projection                 (31)
 python tests/test_loopback.py       # the chain, with sampler and VAE stubbed           (24)

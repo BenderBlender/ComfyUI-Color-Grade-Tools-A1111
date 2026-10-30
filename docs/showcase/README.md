@@ -6,10 +6,10 @@ Colour wheels and film palettes that work **inside** the diffusion model while i
 Automatic1111 users have relied on since 2022, ported bit for bit. This page shows every node at work, explains how the
 latent part works and why it matters, and gives the measured numbers behind every claim.
 
-Everything below was rendered on 30 October 2026 through a running ComfyUI (SDXL ProtoVision XL unless a section says
-otherwise) and measured with OpenCV LAB means. Click any picture for a larger one. The two test pictures — a girl on a
-porch (illustration) and a mech robot (photo style) — are the author's own; the film frames are open-licensed, see
-[CREDITS](CREDITS.md).
+Everything below was rendered on 30–31 October 2026 through a running ComfyUI (SDXL ProtoVision XL unless a section
+says otherwise) and measured with OpenCV LAB means. Click any picture for a larger one. The test pictures — a girl on a
+porch (illustration), a mech robot (photo style), a pickup chased by a tree monster (photo style) and a witch's selfie
+(painting) — are the author's own; the film frames are open-licensed, see [CREDITS](CREDITS.md).
 
 **Contents** · [The idea](#the-idea-in-one-picture) · [Why the latent space](#why-grade-in-the-latent-space) ·
 [The A1111 system](#the-a1111-system) · [Wheels inside sampling](#1-grade-wheels-inside-sampling) ·
@@ -17,7 +17,7 @@ porch (illustration) and a mech robot (photo style) — are the author's own; th
 [Colour held through img2img](#4-colour-held-through-img2img) ·
 [Loopback](#5-loopback-eight-img2img-passes) · [Wheels and presets](#6-grade-wheels-presets-and-luts) ·
 [Other families](#7-other-model-families) · [IP-Adapter](#8-ip-adapter-and-colour-held) · [Masks](#9-masks) ·
-[Every node](#every-node-one-by-one) · [Try it](#try-it)
+[Three more pictures](#10-checked-on-three-more-pictures) · [Every node](#every-node-one-by-one) · [Try it](#try-it)
 
 ## The idea in one picture
 
@@ -75,8 +75,12 @@ tone curve — and **Grade Wheels (latent) writes through those measured axes**.
 
 The wheels read the levels of a lightly blurred prediction (5 latent pixels, so they grade areas, not texture), compute
 the target once from the first prediction in the window, hold it, and close half of the remaining gap at each model
-call. The grade neither piles up over twenty steps nor fades as the model keeps working, and `strength` scales it in
-proportion: on the girl, 0.5 gives ×0.47 of the full shift.
+call — and they move only that blurred picture, leaving the fine part to the model. A latent pixel's projection is not
+that pixel's colour: much of it is the latent's texture code, and a level map applied pixel by pixel rescaled it — neon
+blotches under an anchor, fine detail ×0.72–1.37 without one. Moving only the blurred picture keeps the detail at
+×0.87–1.04 on four test pictures. The grade neither piles up over twenty steps nor fades as the model keeps working;
+`strength` scales it, though not exactly in proportion: 0.5 gives ×0.39 of the full shift on the girl,
+×0.58–0.78 on three other pictures.
 
 ### Why it is worth having
 
@@ -89,14 +93,17 @@ proportion: on the girl, 0.5 gives ×0.47 of the full shift.
 
 ### What it does not promise
 
-- **The direction is right everywhere; the exact hue and size are approximate**, because the decoder is not linear. On
-  the girl the latent wheels land within 0.9–10° of hue and ×1.06–1.14 of the size of the same wheels applied
-  afterwards; on SD 3.5 a street lands within 10.9° at ×0.90.
+- **The exact hue and size are approximate**, because the decoder is not linear. Against the same wheels applied
+  afterwards, the latent result lands 0.4–1.4 LAB units away on the girl (for shifts of 5–16), 2.2–3.6 on a photo of a
+  robot and on a painted crowd — and 4.8–6.4 on a dark, green, snowy forest scene, where Golden hour came out greener
+  rather than golden (section 10; the code before the current one did the same there). On SD 3.5 a street lands within
+  8.3° at ×0.91.
 - **Light passes start below the window.** At denoise ≈ 0.3 the run begins after `end_percent`, so the node does
   nothing and says so in the console. Use A1111 Color Correction there.
-- **Grade Wheels + `anchor` is the least settled mode.** With a film frame as anchor it reached 0.49–0.95 of the way,
-  overshot on a bright warm frame and raised contrast (detail ×1.2–1.6). For a frame's palette use the three-node chain
-  of template 08, which reached 0.79–0.99.
+- **Grade Wheels + `anchor` is the gentler way to a frame's palette.** It takes the frame's levels and colourfulness and
+  keeps the picture's detail (×0.81–1.23 on four pictures), but gets 0.43–0.96 of the way to the frame's colour and can
+  oversaturate warm frames. The three-node chain of template 08 gets further, 0.62–0.99, at the price of darker,
+  softer results on dark frames — and on the robot it rewrote the lettering on its chest.
 - **When a number must be exact, finish on an image node** — they are exact by construction.
 
 ## The A1111 system
@@ -138,12 +145,11 @@ Wheels (image)** on the finished render. Right column: the same wheels on **Grad
 |---|---|---|---|---|
 | **Teal and orange** | <a href="frames/girl.jpg"><img src="frames/girl.jpg" alt="Input, Teal and orange" width="100%"></a> | <a href="frames/GW_girl_none.jpg"><img src="frames/GW_girl_none.jpg" alt="img2img, no grade, Teal and orange" width="100%"></a> | <a href="frames/GW_girl_teal_and_orange_after.jpg"><img src="frames/GW_girl_teal_and_orange_after.jpg" alt="Wheels after, Teal and orange" width="100%"></a> | <a href="frames/GW_girl_teal_and_orange_during_k1.0.jpg"><img src="frames/GW_girl_teal_and_orange_during_k1.0.jpg" alt="Wheels inside sampling, Teal and orange" width="100%"></a> |
 
-The colour shift each makes from the ungraded render, latent against image: Teal and orange 10.3° apart
-at ×1.06 the size, Golden hour 0.9° at ×1.14, Moonlight
-4.5° at ×1.08. The latent version is the model's own: Golden hour comes out with
-×1.12 the fine detail of the ungraded render, Moonlight softer at ×0.78.
+The colour shift each makes from the ungraded render, latent against image: Teal and orange 11.4° apart
+at ×0.88 the size, Golden hour 5.6° at ×1.09, Moonlight
+1.1° at ×0.99. Fine detail stays close to the ungraded render's: ×0.92–1.01.
 
-**Strength is a dial, not a switch.** Teal and orange at 0.5 gives ×0.47 of the shift at
+**Strength is a dial, not a switch.** Teal and orange at 0.5 gives ×0.39 of the shift at
 1.0:
 
 | | No grade | strength 0.5 | strength 1.0 |
@@ -202,13 +208,13 @@ sampler renders the same seed with the palette alone, so you see exactly what th
 *Warm*: lift −0.03 / 0 / +0.06, gain +0.09 / +0.03 / −0.08, saturation 1.15, contrast 1.05 — the circles template 09
 ships with. *Cool*: lift blue +0.03, gamma 1.12, gain −0.05 / 0 / +0.07, saturation 0.8, contrast 0.95.
 
-Measured against the same circles laid over the palette-only render afterwards: on Tears of Steel, Sintel and The Toll
-of the Sea the latent shift goes the same way (warm within 4–42°,
-cool within 1–22°), from ×0.39 to ×2.39 of the size.
-On the darkest frame, Spring's night, the warm circles barely show (colourfulness ×0.99
-against ×1.30 afterwards) — for a dark palette, finish the warmth on the image wheels.
-Adding Latent Color Guidance to this chain took 32 % and
-15 % of the shift back, which is why template 09 leaves it out.
+Measured against the same circles laid over the palette-only render afterwards, as colourfulness against the
+palette-only render: on Tears of Steel, Sintel and The Toll of the Sea the warm circles give ×1.25–1.38
+(afterwards ×1.21–1.30), the cool ones ×0.60–0.68 (afterwards
+×0.66–0.76). On the darkest frame, Spring's night, the warm circles barely show (×1.02
+against ×1.30 afterwards) — for a dark palette, finish the warmth on the image wheels. The same
+holds on three other pictures (section 10). Adding Latent Color Guidance to this chain took
+38 % and 20 % of the shift back, which is why template 09 leaves it out.
 
 ## 4. Colour held through img2img
 
@@ -289,8 +295,9 @@ The same nodes on other models, unchanged settings.
 | **SDXL, a dusk street** | <a href="frames/I_street_s0_none.jpg"><img src="frames/I_street_s0_none.jpg" alt="No grade, SDXL, a dusk street" width="100%"></a> | <a href="frames/I_street_s0_teal_and_orange_after.jpg"><img src="frames/I_street_s0_teal_and_orange_after.jpg" alt="Wheels after, SDXL, a dusk street" width="100%"></a> | <a href="frames/I_street_s0_teal_and_orange_while_k1.0_start0.6.jpg"><img src="frames/I_street_s0_teal_and_orange_while_k1.0_start0.6.jpg" alt="Grade Wheels (latent), SDXL, a dusk street" width="100%"></a> |
 | **SD 3.5 medium** | <a href="frames/K_sd35_street_none.jpg"><img src="frames/K_sd35_street_none.jpg" alt="No grade, SD 3.5 medium" width="100%"></a> | <a href="frames/K_sd35_street_tao_after.jpg"><img src="frames/K_sd35_street_tao_after.jpg" alt="Wheels after, SD 3.5 medium" width="100%"></a> | <a href="frames/K_sd35_street_tao_while.jpg"><img src="frames/K_sd35_street_tao_while.jpg" alt="Grade Wheels (latent), SD 3.5 medium" width="100%"></a> |
 
-Teal and orange from scratch (seed 0, 26 steps, cfg 6.5): SDXL within 2.8° of the image grade at ×0.90 of its size,
-SD 3.5 within 10.9° at ×0.90 — through the decoders' measured axes; the preview matrix had given 24.5° on SD 3.5.
+Teal and orange from scratch (seed 0, 26 steps, cfg 6.5): SDXL within 3.8° of the image grade at ×0.79 of its size,
+SD 3.5 within 8.3° at ×0.91 — through the decoders' measured axes (the preview matrix had given 24.5° on SD 3.5);
+SD 1.5, on the preview matrix, within 4.4° at ×0.97.
 
 | | Input | img2img, no guidance | Latent Color Guidance |
 |---|---|---|---|
@@ -320,6 +327,38 @@ IP-Adapter already carries most of a palette; the guidance brings the colour 17 
 Outside a mask the image nodes change no pixel (max |Δ| 0); inside, the correction measures its histograms there. The
 latent nodes take a mask too: it limits where the colour is *measured*, the usual want for inpainting.
 
+## 10. Checked on three more pictures
+
+Everything above was measured on the girl first. The same tests on three more pictures — a photo-style robot, a
+photo-style forest chase at 1200×680 and a painted crowd — SDXL img2img at denoise 0.5, seed 0, the same settings.
+
+**Grade wheels inside sampling** (Golden hour):
+
+| | Input | No grade | Wheels after | Wheels inside sampling |
+|---|---|---|---|---|
+| **Robot** | <a href="frames/robot.jpg"><img src="frames/robot.jpg" alt="Input, Robot" width="100%"></a> | <a href="frames/RC_robot_none.jpg"><img src="frames/RC_robot_none.jpg" alt="No grade, Robot" width="100%"></a> | <a href="frames/RC_robot_golden_hour_after.jpg"><img src="frames/RC_robot_golden_hour_after.jpg" alt="Wheels after, Robot" width="100%"></a> | <a href="frames/RC_robot_golden_hour_during_k1.0.jpg"><img src="frames/RC_robot_golden_hour_during_k1.0.jpg" alt="Wheels inside sampling, Robot" width="100%"></a> |
+| **Forest chase** | <a href="frames/truck.jpg"><img src="frames/truck.jpg" alt="Input, Forest chase" width="100%"></a> | <a href="frames/RC_truck_none.jpg"><img src="frames/RC_truck_none.jpg" alt="No grade, Forest chase" width="100%"></a> | <a href="frames/RC_truck_golden_hour_after.jpg"><img src="frames/RC_truck_golden_hour_after.jpg" alt="Wheels after, Forest chase" width="100%"></a> | <a href="frames/RC_truck_golden_hour_during_k1.0.jpg"><img src="frames/RC_truck_golden_hour_during_k1.0.jpg" alt="Wheels inside sampling, Forest chase" width="100%"></a> |
+| **Witch's selfie** | <a href="frames/witch.jpg"><img src="frames/witch.jpg" alt="Input, Witch's selfie" width="100%"></a> | <a href="frames/RC_witch_none.jpg"><img src="frames/RC_witch_none.jpg" alt="No grade, Witch's selfie" width="100%"></a> | <a href="frames/RC_witch_golden_hour_after.jpg"><img src="frames/RC_witch_golden_hour_after.jpg" alt="Wheels after, Witch's selfie" width="100%"></a> | <a href="frames/RC_witch_golden_hour_during_k1.0.jpg"><img src="frames/RC_witch_golden_hour_during_k1.0.jpg" alt="Wheels inside sampling, Witch's selfie" width="100%"></a> |
+
+Distance between the latent result and the same wheels applied afterwards, over Teal and orange, Golden hour and
+Moonlight, in LAB units: robot 2.2–3.6, witch 2.4–2.8 — and forest chase 4.8–6.4, the one scene
+where the latent wheels miss: dark, green and snowy, Golden hour there comes out greener rather than golden and
+Moonlight weaker. The code before the current one missed it too (3.8–5.6): the scene is the cause, and the
+current code is slightly further off there, while it is closer on the robot, the witch and the girl.
+Fine detail inside sampling stays at ×0.87–1.04 of the ungraded render (the code before: ×0.72–1.37).
+`strength` 0.5 gives ×0.58–0.78 of the full shift on these pictures.
+
+**A picture's palette** (template 08):
+
+| | Input | Spring | Sintel | The Toll of the Sea |
+|---|---|---|---|---|
+| **Robot** | <a href="frames/robot.jpg"><img src="frames/robot.jpg" alt="Input, Robot" width="100%"></a> | <a href="frames/RC_robot_ref-spring_cold_08.jpg"><img src="frames/RC_robot_ref-spring_cold_08.jpg" alt="Spring, Robot" width="100%"></a> | <a href="frames/RC_robot_ref-sintel_warm_08.jpg"><img src="frames/RC_robot_ref-sintel_warm_08.jpg" alt="Sintel, Robot" width="100%"></a> | <a href="frames/RC_robot_ref-toll_twostrip_08.jpg"><img src="frames/RC_robot_ref-toll_twostrip_08.jpg" alt="The Toll of the Sea, Robot" width="100%"></a> |
+| **Forest chase** | <a href="frames/truck.jpg"><img src="frames/truck.jpg" alt="Input, Forest chase" width="100%"></a> | <a href="frames/RC_truck_ref-spring_cold_08.jpg"><img src="frames/RC_truck_ref-spring_cold_08.jpg" alt="Spring, Forest chase" width="100%"></a> | <a href="frames/RC_truck_ref-sintel_warm_08.jpg"><img src="frames/RC_truck_ref-sintel_warm_08.jpg" alt="Sintel, Forest chase" width="100%"></a> | <a href="frames/RC_truck_ref-toll_twostrip_08.jpg"><img src="frames/RC_truck_ref-toll_twostrip_08.jpg" alt="The Toll of the Sea, Forest chase" width="100%"></a> |
+| **Witch's selfie** | <a href="frames/witch.jpg"><img src="frames/witch.jpg" alt="Input, Witch's selfie" width="100%"></a> | <a href="frames/RC_witch_ref-spring_cold_08.jpg"><img src="frames/RC_witch_ref-spring_cold_08.jpg" alt="Spring, Witch's selfie" width="100%"></a> | <a href="frames/RC_witch_ref-sintel_warm_08.jpg"><img src="frames/RC_witch_ref-sintel_warm_08.jpg" alt="Sintel, Witch's selfie" width="100%"></a> | <a href="frames/RC_witch_ref-toll_twostrip_08.jpg"><img src="frames/RC_witch_ref-toll_twostrip_08.jpg" alt="The Toll of the Sea, Witch's selfie" width="100%"></a> |
+
+0.62–0.98 of the way to the source's colour on these three. On the robot the chain also rewrote the lettering
+on its chest; on the girl, the forest chase and the witch it kept the picture.
+
 ## Every node, one by one
 
 Ten nodes, under **Color Grade Tools** in the node menu; type "Color Grade" in the search to list them all. Each is shown
@@ -336,10 +375,11 @@ lift / gamma / gain wheels, saturation and contrast as the image node, applied t
 of its window, so the look is composed rather than laid over.
 
 - **Takes** `MODEL`, optional `anchor` latent · **gives** `MODEL` — between the checkpoint and the sampler.
-- **strength** 1.0 is the full look, 0.5 half of it (measured ×0.47).
+- **strength** 1.0 is the full look; 0.5 gives 0.39–0.78 of it, depending on the picture.
 - **start_percent** 0.6 / **end_percent** 1.0 — the window. It holds the levels of its first prediction, so it also
   resists what the model repaints later; from 0.3 an img2img at denoise 0.7 came out 3.4 times the grade, from 0.6 1.1.
-- **anchor** — aim at a latent's levels instead of the model's own (the img2img source is the natural choice).
+- **anchor** — aim at a latent's levels and colourfulness instead of the model's own: the img2img source, or a picture
+  whose palette you want (gentler than template 08, see [what it does not promise](#what-it-does-not-promise)).
 - Right-click: *Presets* (15 built in + yours), *Save these settings as a preset…*, *Show the numbers*.
 - Templates **06**, **09**. Sections [1](#1-grade-wheels-inside-sampling), [3](#3-palette-plus-your-own-wheels).
 
