@@ -189,10 +189,15 @@ class GradeCorrector:
 
         Worked out once and then held. With a reference the targets come from
         it; without one they are taken from the first prediction inside the
-        window, which is why that window starts a third of the way in — by
-        then the prediction has settled and its levels are representative,
-        whereas at the top of the schedule it is a blur whose spread is a
-        fraction of the finished image's.
+        window. At the top of the schedule that is a blur whose spread is a
+        fraction of the finished image's, so the window does not start there.
+        Starting a third of the way in was not late enough either: a hold
+        taken from there also resists everything the model repaints
+        afterwards, and that resistance is measured as part of the grade. On
+        an SDXL img2img at denoise 0.7 the hold alone (wheels a hair from
+        neutral) shifted the colour 2.7 times as far as Teal and orange applied
+        afterwards; the grade from 0.3 came out at 3.4 times, from 0.6 at 1.1,
+        while a txt2img street stayed at 0.9 either way. Hence 0.6.
 
         An earlier version tried to estimate the ungraded image instead, by
         tracking what it had already injected and subtracting it back off.
@@ -302,17 +307,21 @@ class LatentColorGrade:
         required = {
             "model": ("MODEL",),
             "strength": ("FLOAT", {
-                "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
+                "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
                 "tooltip": "How much of the grade: 1.0 the full look, 0.5 half of it. "
                            "The grade is held as a target and approached a little on "
                            "every step, so it neither piles up nor depends on the "
                            "step count.",
             }),
             "start_percent": ("FLOAT", {
-                "default": 0.30, "min": 0.0, "max": 1.0, "step": 0.01,
-                "tooltip": "Where in the schedule to begin. Without a reference the "
+                "default": 0.60, "min": 0.0, "max": 1.0, "step": 0.01,
+                "tooltip": "Where in the schedule to begin. Without an anchor the "
                            "grade takes its bearings from the first prediction it "
-                           "sees, so starting at the very top would aim at a blur.",
+                           "sees and holds those levels, so it also resists whatever "
+                           "the model repaints afterwards. Earlier gives the model "
+                           "longer to compose in the look but lets that hold show — "
+                           "on a denoise-0.7 img2img, 0.3 came out 3.4 times the "
+                           "grade, 0.6 at 1.1 times.",
             }),
             "end_percent": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
         }

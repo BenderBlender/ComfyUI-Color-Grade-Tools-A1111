@@ -183,13 +183,14 @@ image node.
 **Grade — latent on SDXL** writes its colour through the decoder's *measured*
 axes (`a1111_cc/axes.py`, made with `tools/calibrate_axes.py`), not through the
 preview matrix: inverted, the preview fit turned warm highlights magenta at
-three to six times the asked strength. Measured on an SDXL dusk street
-(txt2img, dpmpp_2m, strength 1.0), the latent grade now lands within 0.4–11°
-of the same wheels applied afterwards, at 0.89–1.00 of their size. Still
-approximate: on a bright img2img (denoise 0.7) Teal and orange came out the
-right hue but 3.4 times too strong, and strengths below 1.0 deliver less than
-their share (0.5 gave 0.36 of the grade). Other families use the preview
-matrix until they are measured.
+three to six times the asked strength. It holds the levels of the first
+prediction in its window, so it also resists what the model repaints after
+that; the window therefore starts at 0.6 by default (from 0.3 a denoise-0.7
+img2img came out 3.4 times the grade). Measured on SDXL with dpmpp_2m against
+the same wheels applied afterwards: a dusk street (txt2img) within 3° at 0.90
+of the size at strength 1.0, and 0.78 / 0.76 of the share at 0.5 / 0.25; a
+bright img2img at denoise 0.7 within 3° at 1.1 / 0.67 of the size at 1.0 / 0.5.
+Other families use the preview matrix until they are measured.
 
 All of them take an optional `MASK`, which restricts *where the colours are
 measured* — the usual want for inpainting, where the surrounding plate would

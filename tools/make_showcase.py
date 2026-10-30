@@ -294,7 +294,9 @@ def demo_with_model(session, pack, image_u8, image_name, checkpoint, out, size=1
     look = dict(controls)
     look.update({"lift_b": 0.045, "gain_r": 0.055, "gain_b": -0.040,
                  "saturation": 1.10})
-    grade = {"strength": 0.6, "start_percent": 0.30, "end_percent": 0.95}
+    # strength is the share of the grade since 30.10 (it was a rate); the window
+    # starts at 0.6, the node's default, for the reason given there
+    grade = {"strength": 1.0, "start_percent": 0.60, "end_percent": 0.95}
     grade.update(look)
 
     print(" grade during sampling vs after")

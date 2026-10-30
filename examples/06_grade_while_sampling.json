@@ -448,8 +448,8 @@
     "Node name for S&R": "LatentColorGrade"
    },
    "widgets_values": [
-    0.5,
-    0.3,
+    1.0,
+    0.6,
     1.0,
     0.0,
     0.0,

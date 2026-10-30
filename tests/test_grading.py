@@ -378,10 +378,10 @@ def test_a_fixed_target_holds_the_levels_it_was_given():
 
     Once a target is set the hook keeps pulling towards it, so a prediction
     that drifts afterwards is pulled back. That is what "put the shadows
-    here" asks for. It is also why the window starts a third of the way in:
-    a target taken from the blur at the top of the schedule would be a target
-    for the wrong picture, and everything after it would be dragged towards
-    that blur.
+    here" asks for. It is also why the window does not start at the top: a
+    target taken from the blur there would be a target for the wrong picture,
+    and everything after it would be dragged towards that blur (and why it
+    starts as late as 0.6: the hold also resists what the model repaints).
     """
     N = _node_module()
     space = _space()
