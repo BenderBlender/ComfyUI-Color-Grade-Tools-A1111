@@ -216,6 +216,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ApplyLatentColorGuidance": "ColorKit Latent Color Guidance",
-    "LatentColorMatch": "ColorKit Latent Color Match",
+    "ApplyLatentColorGuidance": "ColorKit Latent Color Guidance (model patch)",
+    "LatentColorMatch": "ColorKit Latent Color Match (one shot)",
 }

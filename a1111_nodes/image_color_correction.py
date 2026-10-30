@@ -165,5 +165,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "A1111ColorCorrection": "ColorKit A1111 Color Correction",
+    "A1111ColorCorrection": "ColorKit A1111 Color Correction (image)",
 }

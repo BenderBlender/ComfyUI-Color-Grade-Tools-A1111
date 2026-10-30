@@ -350,6 +350,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LatentColorGrade": "ColorKit Grade — latent (wheels)",
-    "ImageColorGrade": "ColorKit Grade — image (wheels)",
+    "LatentColorGrade": "ColorKit Grade wheels — latent (model patch)",
+    "ImageColorGrade": "ColorKit Grade wheels — image",
 }

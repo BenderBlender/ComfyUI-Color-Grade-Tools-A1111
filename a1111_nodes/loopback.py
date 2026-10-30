@@ -324,5 +324,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "A1111Loopback": "ColorKit A1111 Loopback",
+    "A1111Loopback": "ColorKit A1111 Loopback (sampler)",
 }

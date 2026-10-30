@@ -99,5 +99,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "A1111LatentColorKSampler": "ColorKit KSampler (deprecated)",
+    "A1111LatentColorKSampler": "ColorKit KSampler — old, use Guidance instead",
 }
