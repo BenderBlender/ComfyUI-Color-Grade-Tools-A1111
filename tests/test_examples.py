@@ -33,6 +33,29 @@ def load_pack_types():
     return module.NODE_CLASS_MAPPINGS
 
 
+def _other_packs(comfy_root, wanted=("ComfyUI_IPAdapter_plus",)):
+    """Node types an example borrows from another pack, so that they are not
+    reported as unknown when that pack is installed."""
+    import importlib.util
+
+    found = {}
+    for name in wanted:
+        init = os.path.join(comfy_root, "custom_nodes", name, "__init__.py")
+        if not os.path.exists(init):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"check_{name}", init,
+                submodule_search_locations=[os.path.dirname(init)])
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            spec.loader.exec_module(module)
+            found.update(getattr(module, "NODE_CLASS_MAPPINGS", {}))
+        except Exception:  # noqa: BLE001 - a missing pack is not a test failure
+            pass
+    return found
+
+
 def check_workflow(path, known_types=None):
     with open(path, encoding="utf-8") as fh:
         wf = json.load(fh)
@@ -113,6 +136,7 @@ def main():
         os.chdir(args.comfy)
         import nodes as comfy_nodes
         known = dict(comfy_nodes.NODE_CLASS_MAPPINGS)
+        known.update(_other_packs(args.comfy))
         pack = load_pack_types()
         if pack:
             known.update(pack)

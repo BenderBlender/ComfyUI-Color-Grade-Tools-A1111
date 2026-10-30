@@ -415,6 +415,143 @@ def build_grade_latent(core, pack, out):
     w.dump(os.path.join(out, "06_grade_while_sampling.json"))
 
 
+def build_ipadapter(core, pack, out):
+    """IP-Adapter on its own, and IP-Adapter with the colour pinned.
+
+    The two transfer different things from the same picture, which is why
+    they belong together rather than in competition.
+    """
+    missing = [n for n in ("IPAdapterUnifiedLoader", "IPAdapterAdvanced") if n not in core]
+    if missing:
+        print(f"  skipping the IP-Adapter example: {', '.join(missing)} not installed")
+        return
+
+    w = Workflow()
+    w.note(
+        "## IP-Adapter, and IP-Adapter with the colour held\n\n"
+        "Both take something from the same reference picture, but not the same "
+        "thing. IP-Adapter encodes it with CLIP Vision and feeds the result into "
+        "the model's attention, which carries **subject, style and texture**. It "
+        "is famously loose about the palette: the look arrives, the exact colours "
+        "wander.\n\n"
+        "The ColorKit node measures the reference's **colour** and holds the "
+        "prediction to it. Different hook, different quantity, no conflict — one "
+        "patches attention, the other patches the noise prediction.\n\n"
+        "Both branches run the **same seed**, so the only difference is the "
+        "colour node. The comparison at the end is the point of the graph.\n\n"
+        "**Before running:** pick an SDXL checkpoint, and make sure the "
+        "IP-Adapter models and CLIP Vision are in place — the unified loader "
+        "will say so if they are not.",
+        (-540, 40), (480, 440))
+
+    ckpt = w.add(core["CheckpointLoaderSimple"], "CheckpointLoaderSimple", (20, 40), size=(340, 100))
+    load = w.add(core["LoadImage"], "LoadImage", (20, 190), size=(340, 320),
+                 title="The reference — style and colour both come from here")
+    pos = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (20, 540),
+                {"text": "a harbour at dawn, boats, wet stone, photograph"},
+                (340, 120), "Positive")
+    neg = w.add(core["CLIPTextEncode"], "CLIPTextEncode", (20, 700),
+                {"text": "blurry, low quality"}, (340, 110), "Negative")
+    empty = w.add(core["EmptyLatentImage"], "EmptyLatentImage", (20, 850),
+                  {"width": 1024, "height": 1024}, (340, 110))
+
+    loader = w.add(core["IPAdapterUnifiedLoader"], "IPAdapterUnifiedLoader", (420, 40),
+                   {"preset": "PLUS (high strength)"}, (340, 100))
+    ip = w.add(core["IPAdapterAdvanced"], "IPAdapterAdvanced", (420, 190),
+               {"weight": 0.8, "start_at": 0.0, "end_at": 1.0}, (340, 220))
+
+    encode = w.add(core["VAEEncode"], "VAEEncode", (420, 460), size=(260, 60),
+                   title="Reference, as a latent")
+    guide = w.add(pack["ApplyLatentColorGuidance"], "ApplyLatentColorGuidance", (420, 560),
+                  {"strength": 0.6, "start_percent": 0.15, "end_percent": 0.9},
+                  (340, 240), "The colour, held")
+
+    seed = 777000
+    plain = w.add(core["KSampler"], "KSampler", (820, 40),
+                  {"seed": seed, "steps": 28, "cfg": 6.0, "sampler_name": "dpmpp_2m",
+                   "scheduler": "karras", "denoise": 1.0}, (320, 280),
+                  "IP-Adapter only")
+    held = w.add(core["KSampler"], "KSampler", (820, 360),
+                 {"seed": seed, "steps": 28, "cfg": 6.0, "sampler_name": "dpmpp_2m",
+                  "scheduler": "karras", "denoise": 1.0}, (320, 280),
+                 "IP-Adapter + ColorKit")
+
+    decode_a = w.add(core["VAEDecode"], "VAEDecode", (1180, 40), size=(240, 60))
+    decode_b = w.add(core["VAEDecode"], "VAEDecode", (1180, 140), size=(240, 60))
+    preview_a = w.add(core["PreviewImage"], "PreviewImage", (1180, 240), size=(300, 280),
+                      title="IP-Adapter only")
+    preview_b = w.add(core["PreviewImage"], "PreviewImage", (1180, 560), size=(300, 280),
+                      title="with the colour held")
+
+    compare = w.add(pack["ColorKitCompare"], "ColorKitCompare", (1520, 40),
+                    {"mode": "wipe", "position": 0.5}, (320, 180))
+    shown = w.add(core["SaveImage"], "SaveImage", (1520, 260), size=(360, 380),
+                  title="Side by side")
+    scopes = w.add(pack["ColorKitScopes"], "ColorKitScopes", (1520, 680),
+                   {"mode": "all", "size": 360}, (320, 140))
+    scope_out = w.add(core["PreviewImage"], "PreviewImage", (1880, 680), size=(360, 220),
+                      title="Scopes of the held version")
+
+    w.link(ckpt, 0, loader, "model")
+    w.link(loader, 0, ip, "model")
+    w.link(loader, 1, ip, "ipadapter")
+    w.link(load, 0, ip, "image")
+    w.link(ckpt, 1, pos, "clip")
+    w.link(ckpt, 1, neg, "clip")
+
+    w.link(load, 0, encode, "pixels")
+    w.link(ckpt, 2, encode, "vae")
+    w.link(ip, 0, guide, "model")
+    w.link(encode, 0, guide, "reference_latent")
+
+    for sampler, model_node in ((plain, ip), (held, guide)):
+        w.link(model_node, 0, sampler, "model")
+        w.link(pos, 0, sampler, "positive")
+        w.link(neg, 0, sampler, "negative")
+        w.link(empty, 0, sampler, "latent_image")
+
+    w.link(plain, 0, decode_a, "samples")
+    w.link(held, 0, decode_b, "samples")
+    w.link(ckpt, 2, decode_a, "vae")
+    w.link(ckpt, 2, decode_b, "vae")
+    w.link(decode_a, 0, preview_a, "images")
+    w.link(decode_b, 0, preview_b, "images")
+
+    w.link(decode_a, 0, compare, "image_a")
+    w.link(decode_b, 0, compare, "image_b")
+    w.link(compare, 0, shown, "images")
+    w.link(decode_b, 0, scopes, "image")
+    w.link(scopes, 0, scope_out, "images")
+
+    w.dump(os.path.join(out, "07_ipadapter_with_colorkit.json"))
+
+
+def _extra_packs(comfy_root, wanted=("ComfyUI_IPAdapter_plus",)):
+    """Load the other custom-node packs an example needs.
+
+    ``import nodes`` only brings ComfyUI's own; a workflow that uses someone
+    else's has to be built against their real definitions, or the inputs it
+    writes will not match what the editor expects.
+    """
+    found = {}
+    for name in wanted:
+        base = os.path.join(comfy_root, "custom_nodes", name)
+        init = os.path.join(base, "__init__.py")
+        if not os.path.exists(init):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"extra_{name}", init, submodule_search_locations=[base])
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            spec.loader.exec_module(module)
+            found.update(getattr(module, "NODE_CLASS_MAPPINGS", {}))
+            print(f"  using {name}: {len(found)} nodes")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  could not load {name}: {exc!r}")
+    return found
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--comfy", required=True)
@@ -434,7 +571,8 @@ def main():
     sys.modules["A1111CCPack"] = module
     spec.loader.exec_module(module)
 
-    core = comfy_nodes.NODE_CLASS_MAPPINGS
+    core = dict(comfy_nodes.NODE_CLASS_MAPPINGS)
+    core.update(_extra_packs(args.comfy))
     pack = module.NODE_CLASS_MAPPINGS
 
     build_img2img(core, pack, out)
@@ -443,6 +581,7 @@ def main():
     build_loopback(core, pack, out)
     build_grade_image(core, pack, out)
     build_grade_latent(core, pack, out)
+    build_ipadapter(core, pack, out)
 
 
 if __name__ == "__main__":
