@@ -365,24 +365,41 @@ def test_a_single_reference_serves_a_batch():
 # the sampling hook
 # --------------------------------------------------------------------------- #
 
-def test_a_neutral_grade_survives_a_changing_prediction():
-    """The reason the first attempt at this was wrong.
+def test_a_neutral_grade_never_reaches_the_sampler():
+    """Nothing is hooked at all when every wheel is at rest, so the question
+    of what a neutral grade would do to a prediction does not arise."""
+    N = _node_module()
+    defaults = {name: spec[1]["default"] for name, spec in N.GRADE_CONTROLS.items()}
+    assert N._grade_from(defaults).is_neutral()
 
-    Early in sampling x0 is blurred and its spread is a fraction of the
-    finished image's. Anchoring to it would squeeze contrast a little further
-    on every step — so a neutral grade is checked against exactly that.
+
+def test_a_fixed_target_holds_the_levels_it_was_given():
+    """Holding on to levels is the meaning of the control, not a defect.
+
+    Once a target is set the hook keeps pulling towards it, so a prediction
+    that drifts afterwards is pulled back. That is what "put the shadows
+    here" asks for. It is also why the window starts a third of the way in:
+    a target taken from the blur at the top of the schedule would be a target
+    for the wrong picture, and everything after it would be dragged towards
+    that blur.
     """
     N = _node_module()
-    corrector = N.GradeCorrector(_space(), G.Grade(), 0.5)
+    space = _space()
+    grade = G.Grade(gain=G.Wheel(red=0.10))
+    corrector = N.GradeCorrector(space, grade, 1.0)
 
-    worst = 0.0
-    for scale in (0.3, 0.3, 1.0, 1.0, 1.0, 1.0):
-        x = torch.randn(1, 4, 32, 32) * scale
-        out = corrector(x, None)
-        worst = max(worst, float((out - x).abs().max()),
-                    abs(float(out.std() - x.std())))
-    assert worst < 1e-4, worst
-    print(f"  neutral grade moves nothing: worst {worst:.2e}")
+    settled = torch.randn(1, 4, 32, 32)
+    corrector(settled, 4.0)
+    targets = corrector._targets.clone()
+
+    drifted = torch.randn(1, 4, 32, 32) * 1.4
+    out = corrector(drifted, 3.0)
+
+    reached = G.channel_levels(G.to_unit(space.forward(out)))
+    assert torch.allclose(reached, targets, atol=0.05),         float((reached - targets).abs().max())
+    assert torch.allclose(corrector._targets, targets), "the target must not move"
+    print(f"  later drift pulled back to the target, within "
+          f"{float((reached - targets).abs().max()):.3f}")
 
 
 def test_the_hook_converges_instead_of_compounding():
@@ -411,10 +428,11 @@ def test_state_is_dropped_when_a_new_run_starts():
     x = torch.randn(1, 4, 32, 32)
     for sigma in (14.0, 7.0, 3.0, 1.0):
         x = corrector(x, sigma)
-    assert corrector._injected is not None
+    first_targets = corrector._targets.clone()
 
     corrector(torch.randn(1, 4, 32, 32), 14.0)      # sigma jumped back up
     assert corrector._last_sigma == 14.0
+    assert not torch.allclose(corrector._targets, first_targets),         "the second run must take its own bearings"
 
 
 def test_a_mid_run_sigma_wobble_does_not_reset():
@@ -423,9 +441,11 @@ def test_a_mid_run_sigma_wobble_does_not_reset():
     N = _node_module()
     corrector = N.GradeCorrector(_space(), G.Grade(gain=G.Wheel(red=0.1)), 0.5)
     x = torch.randn(1, 4, 32, 32)
-    for sigma in (12.0, 12.0, 11.8, 11.9, 9.0, 9.0):
+    corrector(x, 12.0)
+    targets = corrector._targets.clone()
+    for sigma in (12.0, 11.8, 11.9, 9.0, 9.0):
         x = corrector(x, sigma)
-        assert corrector._injected is not None, sigma
+        assert torch.allclose(corrector._targets, targets), sigma
 
 
 def test_an_anchor_fixes_the_targets():
@@ -435,8 +455,9 @@ def test_an_anchor_fixes_the_targets():
     corrector = N.GradeCorrector(space, G.Grade(), 1.0, anchor)
 
     first = corrector(torch.randn(1, 4, 32, 32), 10.0)
+    targets = corrector._targets.clone()
     second = corrector(torch.randn(1, 4, 32, 32), 5.0)
-    assert corrector._injected is None, "an anchored grade needs no injection tracking"
+    assert torch.allclose(corrector._targets, targets),         "an anchored grade must not re-aim at each prediction"
     assert torch.isfinite(first).all() and torch.isfinite(second).all()
 
 
@@ -451,6 +472,44 @@ def test_anchor_and_wheels_together():
     a = space.forward(plain(x, 5.0))
     b = space.forward(warmed(x, 5.0))
     assert float(b[:, 0].mean()) > float(a[:, 0].mean()), "the wheel should sit on top"
+
+
+def test_the_grade_survives_a_model_that_pushes_back():
+    """The property the node exists for, and the one that was missing.
+
+    A sampler does not simply accept what the hook hands it: the model
+    re-predicts, and some of the correction is undone. Holding a fixed target
+    means every call pulls towards the same place, so what arrives is roughly
+    proportional to how much the model cooperates. Estimating the ungraded
+    image instead — by subtracting back what had been injected — looked
+    equivalent and was not: it reads its own correction as the model's work,
+    stops pushing, and delivers almost nothing.
+    """
+    N = _node_module()
+    space = _space()
+    grade = G.Grade(gain=G.Wheel(red=0.12), lift=G.Wheel(master=0.05))
+
+    def delivered(keeps, calls=16):
+        corrector = N.GradeCorrector(space, grade, 0.5)
+        base = torch.randn(1, 4, 32, 32)
+        x = base.clone()
+        for i in range(calls):
+            injected = corrector(x, 10.0 - i * 0.5) - x
+            x = base + keeps * (x - base) + keeps * injected
+
+        levels = G.channel_levels(G.to_unit(space.forward(base)))
+        wanted = G.apply_grade(levels.reshape(1, 3, 1, 3),
+                               grade.tonal()).reshape(levels.shape)
+        got = G.channel_levels(G.to_unit(space.forward(x)))
+        return float((got - levels).abs().mean() / (wanted - levels).abs().mean())
+
+    results = {keeps: delivered(keeps) for keeps in (1.0, 0.8, 0.5)}
+    assert results[1.0] > 0.95, results
+    assert results[0.8] > 0.4, results      # the injection scheme managed 0.03
+    assert results[0.5] > 0.2, results      # and 0.00
+    assert results[1.0] > results[0.8] > results[0.5], results
+    print("  grade delivered: " +
+          ", ".join(f"{k:.0%} kept -> {v:.2f}" for k, v in results.items()))
 
 
 if __name__ == "__main__":

@@ -115,7 +115,6 @@ class GradeCorrector:
         self.strength = strength
         self._anchor = anchor          # projected reference, or None
         self._targets = None
-        self._injected = None
         self._last_sigma = None
         self._warned = set()
 
@@ -132,7 +131,6 @@ class GradeCorrector:
         if sigma is None:
             return
         if self._last_sigma is not None and sigma > self._last_sigma * 1.05:
-            self._injected = None
             self._targets = None
         self._last_sigma = sigma
 
@@ -148,28 +146,30 @@ class GradeCorrector:
     def _target_levels(self, unit):
         """Where the shadows, midtones and highlights should end up.
 
-        With a reference the answer is fixed: grade *its* levels, once. Without
-        one there is nothing to measure that the grade has not already touched
-        — and the first prediction is no good as a stand-in, because early in
-        sampling it is blurred and its spread is a fraction of the finished
-        image's, so anchoring to it would squeeze contrast on every step.
+        Worked out once and then held. With a reference the targets come from
+        it; without one they are taken from the first prediction inside the
+        window, which is why that window starts a third of the way in — by
+        then the prediction has settled and its levels are representative,
+        whereas at the top of the schedule it is a blur whose spread is a
+        fraction of the finished image's.
 
-        So the correction keeps track of what it has already injected and
-        subtracts it back off, which recovers the levels the model would have
-        produced on its own. If the model keeps our change, the estimate is
-        exact; if it pushes back, we under-correct — the safe direction.
+        An earlier version tried to estimate the ungraded image instead, by
+        tracking what it had already injected and subtracting it back off.
+        That is exact only if the model keeps every bit of the correction. It
+        does not: simulated against a model that pushes back twenty percent
+        per call, that scheme delivered three percent of the grade, and at
+        fifty percent pushback none of it. Holding a fixed target degrades
+        gently instead — 0.82, 0.67 and 0.33 of the grade for the same three
+        cases — because every call pulls towards the same place rather than
+        concluding the work is already done.
         """
-        if self._anchor is not None:
-            if self._targets is None:
-                anchor = G.to_unit(self._anchor.to(unit.device, unit.dtype))
-                self._targets = self._graded(G.channel_levels(anchor))
-            return self._targets.to(unit.device, unit.dtype), None
-
-        current = G.channel_levels(unit)
-        if self._injected is None or self._injected.shape != current.shape:
-            self._injected = torch.zeros_like(current)
-        ungraded = current - self._injected.to(current.device, current.dtype)
-        return self._graded(ungraded), current
+        if self._targets is None:
+            if self._anchor is not None:
+                base = G.to_unit(self._anchor.to(unit.device, unit.dtype))
+            else:
+                base = unit
+            self._targets = self._graded(G.channel_levels(base))
+        return self._targets.to(unit.device, unit.dtype), None
 
     def __call__(self, x0, sigma=None):
         self._note_sigma(sigma)
@@ -190,8 +190,6 @@ class GradeCorrector:
 
         step = (targets - current) * self.strength
         mapped = G.piecewise_map(unit, current, current + step)
-        if self._anchor is None:
-            self._injected = self._injected + step
 
         if self.grade.saturation != 1.0:
             mapped = G.apply_grade(mapped, self.grade.per_pixel())
@@ -219,7 +217,12 @@ class LatentColorGrade:
                            "this is a rate, not an amount: 1.0 snaps there on every "
                            "call, lower lets the model meet it half way.",
             }),
-            "start_percent": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+            "start_percent": ("FLOAT", {
+                "default": 0.30, "min": 0.0, "max": 1.0, "step": 0.01,
+                "tooltip": "Where in the schedule to begin. Without a reference the "
+                           "grade takes its bearings from the first prediction it "
+                           "sees, so starting at the very top would aim at a blur.",
+            }),
             "end_percent": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
         }
         required.update(GRADE_CONTROLS)
